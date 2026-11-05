@@ -1,13 +1,14 @@
 # W.A.V.E 🌊
 
 > **"Windows Are Very Easily-moved"**
-> Touchless, spatial window manager for Windows — built for **Crown Hacks**.
+> Touchless, spatial hand-gesture window manager & V-sign scroller for Windows.
 
-W.A.V.E turns your laptop webcam into a local, zero-latency spatial controller for native Windows desktop apps. Pinch in mid-air to grab the window under your hand, drag toward a screen edge or corner to preview the landing zone, and release to snap real OS windows (Notepad, Chrome, VS Code, Explorer) flush into place.
+W.A.V.E turns your laptop webcam into a local, zero-latency spatial controller for native Windows desktop apps. Pinch in mid-air to grab the window under your hand, drag toward a screen edge or corner to preview the landing zone, release to snap real OS windows flush into place, or hold up a peace sign (V-sign) and move your hand up or down to scroll any window under your cursor.
 
-- **100% Local Vision:** Powered by `@mediapipe/tasks-vision` (`HandLandmarker` in `VIDEO` mode with GPU delegate + CPU fallback) bundled offline in `frontend/src/assets/mediapipe/`. Zero video frames ever leave the browser.
-- **Native Win32 Precision:** ASP.NET Core Web API backend (`user32.dll`, `dwmapi.dll`, `shcore.dll`) with per-monitor DPI awareness (`PER_MONITOR_AWARE_V2`), work-area awareness (`rcWork` so the taskbar is never covered), and DWM Extended Frame Bounds compensation (`DWMWA_EXTENDED_FRAME_BOUNDS`) so snapped windows sit flush with zero invisible-border gaps.
-- **Mouse Simulation Mode Included:** Toggle **Simulation Mode** in the HUD header to test or demo the entire gesture state machine and Win32 snapping pipeline with your mouse (click = pinch, drag = move, release = snap) — no webcam or studio lighting required.
+- **100% Local Vision:** Powered by `@mediapipe/tasks-vision` (`HandLandmarker` in `VIDEO` mode with GPU delegate + CPU fallback) bundled offline in `frontend/src/assets/mediapipe/`. Zero video frames ever leave your device.
+- **Practice Mode & Live Control Gate:** Starts safely in **Practice mode** (`Live control off`) with an interactive 4-step gesture checklist (**Hover, Grab, Snap to edge, Scroll**). Toggle **Live control on** in the header when ready to control real Windows apps.
+- **Native Win32 Precision:** ASP.NET Core Web API backend (`user32.dll`, `dwmapi.dll`, `shcore.dll`) with per-monitor DPI awareness (`PER_MONITOR_AWARE_V2`), work-area awareness (`rcWork` so the taskbar is never covered), DWM Extended Frame Bounds compensation (`DWMWA_EXTENDED_FRAME_BOUNDS`), and native mouse wheel injection (`SendInput` with `MOUSEEVENTF_WHEEL = 0x0800`).
+- **Mouse Simulation Mode Included:** Toggle **Simulate** in the header to test or demo the entire gesture state machine, Win32 snapping pipeline, and V-sign scrolling with your mouse (click & hold = pinch-grab, drag to edge & release = snap, hold `Shift` + move vertically = V-sign scroll).
 
 ---
 
@@ -16,33 +17,38 @@ W.A.V.E turns your laptop webcam into a local, zero-latency spatial controller f
 Frontend and backend live in strictly separated top-level folders and build/run independently:
 
 ```text
-scepter/
+WAVE/
 ├── README.md              # Setup, architecture, run instructions, 60s demo script
-├── .gitignore             # Root gitignore for .NET and Angular/Node artifacts
+├── docs/
+│   └── api-contract.md    # Full HTTP contract (/health, /api/window/*, /api/input/scroll)
 ├── frontend/              # Angular 18 standalone app (http://localhost:4200)
 │   ├── src/
-│   │   ├── index.html     # <title>WAVEHUD</title> (used by backend to ignore self)
-│   │   ├── assets/mediapipe/ # Local offline hand_landmarker.task + WASM binaries
+│   │   ├── index.html     # <title>WAVEHUD</title> (never changes at runtime; ignored by backend)
+│   │   ├── assets/
+│   │   │   ├── fonts/     # Bundled Space Grotesk Variable & JetBrains Mono woff2 fonts
+│   │   │   └── mediapipe/ # Local offline hand_landmarker.task + WASM binaries
 │   │   └── app/
 │   │       ├── core/
 │   │       │   ├── models/   # landmark.model.ts, gesture.model.ts, snap-action.model.ts
-│   │       │   ├── services/ # camera, hand-tracker, gesture-engine, window-api, settings
-│   │       │   └── utils/    # lerp.ts (Lerp & One Euro 1€ filters), geometry.ts (mirrorX)
+│   │       │   ├── services/ # wave-view-model.store, gesture-engine, window-api, camera, hand-tracker, settings
+│   │       │   └── utils/    # pose.ts (isVSign + scroll math), lerp.ts (Lerp & 1€), geometry.ts
 │   │       └── features/
-│   │           ├── scepter-shell/   # Main spatial workspace, telemetry, simulation mode
-│   │           ├── hud-overlay/     # 60 FPS Canvas skeleton, pinch ring, ghost preview
-│   │           └── settings-panel/  # Live-tunable sliders persisted to localStorage
+│   │           ├── scepter-shell/   # Main W.A.V.E stage, telemetry, practice checklist, guide
+│   │           ├── hud-overlay/     # Outside-zone rAF Canvas skeleton, pinch ring, scroll arrow
+│   │           └── settings-panel/  # Slide-over calibration drawer + action log
 └── backend/               # ASP.NET Core Web API (.NET 8, http://localhost:5000)
+    ├── Scepter.sln
     ├── Scepter.slnx
     ├── Scepter.Api/
     │   ├── Program.cs
-    │   ├── appsettings.json
-    │   ├── Controllers/WindowController.cs
-    │   ├── Services/IWindowService.cs, WindowService.cs, ForegroundTracker.cs, SnapCalculator.cs
+    │   ├── appsettings.json # Scepter:SelfWindowTitleMatch = "WAVEHUD"
+    │   ├── Controllers/WindowController.cs, InputController.cs
+    │   ├── Services/WindowService.cs, InputService.cs, ForegroundTracker.cs, SnapCalculator.cs, ScrollCalculator.cs
     │   ├── Native/NativeMethods.cs, NativeStructs.cs
-    │   └── Models/SnapPosition.cs, GrabRequest.cs, SnapRequest.cs, SnapResult.cs
+    │   └── Models/SnapPosition.cs, GrabRequest.cs, SnapRequest.cs, ScrollRequest.cs, SnapResult.cs
     └── Scepter.Api.Tests/
-        └── SnapCalculatorTests.cs   # Pure xUnit rectangle & DWM border math tests
+        ├── SnapCalculatorTests.cs   # Pure xUnit rectangle & DWM border math tests
+        └── ScrollCalculatorTests.cs # Pure xUnit scroll clamping, coordinate, & x64 INPUT struct tests
 ```
 
 ---
@@ -51,33 +57,37 @@ scepter/
 
 ```mermaid
 flowchart LR
-  subgraph Browser["Frontend: Angular 18 HUD (http://localhost:4200)"]
+  subgraph Browser["Frontend: Angular 18 W.A.V.E HUD (http://localhost:4200)"]
     Cam["Webcam 1280x720\n(or Mouse Simulation)"] --> MP["MediaPipe HandLandmarker\n(Local WASM + GPU/CPU)"]
-    MP --> Mirror["Geometry Util\n(Single X-Axis Mirroring\n+ Hand-Size Normalization)"]
-    Mirror --> Filter["2D Point Filter\n(Lerp alpha=0.35 or 1€ Filter)"]
-    Filter --> FSM["GestureStateMachine\n(IDLE -> HOVER -> GRABBING\n-> DRAGGING -> RELEASED)"]
-    FSM --> Canvas["Canvas HUD Overlay\n(21-Landmark Skeleton,\nPinch Ring, Ghost Preview)"]
+    MP --> Pose["Pose & Geometry Utils\n(Mirror X, Hand-Size Norm,\nisVSign Pose Detector)"]
+    Pose --> Filter["2D Point Filter\n(Lerp alpha=0.35 or 1€ Filter)"]
+    Filter --> FSM["GestureStateMachine\n(IDLE -> HOVER -> GRABBING\n-> DRAGGING -> RELEASED / SCROLLING)"]
+    FSM --> Store["WaveViewModelStore\n(Signals, Practice Checklist,\nAction Log, Live Control Gate)"]
+    Store --> Canvas["Canvas HUD Overlay\n(Outside-Angular rAF Loop)"]
   end
 
   subgraph Backend["Backend: ASP.NET Core API (http://localhost:5000)"]
-    Ctrl["WindowController\n(/api/window/grab, /snap, /resize)"] --> WinSvc["WindowService"]
-    Tracker["ForegroundTracker\n(Polls & Caches Eligible\nNon-Scepter HWNDs)"] --> WinSvc
-    WinSvc --> Calc["SnapCalculator\n(Pure WorkArea + DWM\nBorder Compensation)"]
+    WinCtrl["WindowController\n(/api/window/grab, /snap, /move)"] --> WinSvc["WindowService"]
+    InCtrl["InputController\n(/api/input/scroll)"] --> InSvc["InputService"]
+    Tracker["ForegroundTracker\n(Ignores 'WAVEHUD' Windows)"] --> WinSvc
+    WinSvc --> Calc["SnapCalculator\n(rcWork + DWM Frame Bounds)"]
+    InSvc --> SCalc["ScrollCalculator\n(Clamp +-1200 & Screen Coords)"]
     WinSvc --> PInvoke["NativeMethods P/Invoke\n(user32.dll, dwmapi.dll)"]
+    InSvc --> PInvoke
   end
 
-  FSM -- "POST /api/window/grab {x, y}\nPOST /api/window/snap {position, ratio}" --> Ctrl
-  PInvoke --> OS["Windows 10/11 OS\nNative Desktop Window Snaps"]
+  Store -- "Live Control ON:\nPOST /api/window/grab, /snap\nPOST /api/input/scroll" --> Backend
+  PInvoke --> OS["Windows 10/11 OS\nWindow Snaps & Mouse Wheel"]
 ```
 
 ---
 
 ## Prerequisites
 
-- **OS:** Windows 10 or Windows 11 (required for Win32 window manipulation; non-Windows platforms start the API and return HTTP `501 Not Implemented` for window actions).
+- **OS:** Windows 10 or Windows 11 (required for Win32 window manipulation and `SendInput` wheel injection; non-Windows platforms return HTTP `501 Not Implemented`).
 - **.NET SDK:** .NET 8.0 SDK (or .NET 9/10 SDK targeting `net8.0`).
 - **Node.js & npm:** Node.js `v18.19+` or `v20+` and `npm`.
-- **Webcam:** Any standard USB or integrated laptop webcam (optional when using **Simulation Mode**).
+- **Webcam:** Any standard USB or integrated laptop webcam (optional when using **Simulate** mode).
 
 ---
 
@@ -94,8 +104,8 @@ flowchart LR
 
 2. Run the backend unit test suite (`xUnit`):
    ```powershell
-   cd backend/Scepter.Api.Tests
-   dotnet test
+   cd backend
+   dotnet test Scepter.sln
    ```
 
 ---
@@ -108,9 +118,9 @@ flowchart LR
    npm install
    npm start
    ```
-   *(Or run `npx ng serve` — serves at `http://localhost:4200`.)*
+   - Serves at `http://localhost:4200`.
 
-2. Run the frontend gesture state-machine unit tests (`Vitest`):
+2. Run the frontend unit tests (`Vitest`):
    ```powershell
    cd frontend
    npm test
@@ -118,42 +128,47 @@ flowchart LR
 
 ---
 
-## Tunable Parameters (Live in Settings Panel)
+## Tunable Parameters (Live in Settings Drawer)
 
-All parameters can be tuned live in the **Spatial Calibration** sidebar and persist automatically to `localStorage`:
+Open the **Settings** drawer (`S` key or top-right sliders icon) to tune all gesture and scroll parameters live (persisted to `localStorage` and resettable via **Reset to defaults**):
 
 | Parameter | Default | Description |
 | :--- | :--- | :--- |
+| **Live control (Win32)** | `false` (Off) | Gates all `/grab`, `/move`, `/snap`, `/resize`, `/cycle`, and `/scroll` calls inside `WindowApiService`. Health polling always runs. |
 | **Cursor Smoothing Filter** | `Lerp` | Switch live between Linear Interpolation (`Lerp`) and adaptive `One Euro (1€)` filtering. |
-| **Lerp Smoothing Alpha** | `0.35` | `smoothed = prev + (raw - prev) * alpha`. Applied **before** edge-zone threshold checks. |
-| **Pinch Enter Threshold** | `0.28` | Thumb-to-index distance normalized by hand size (wrist `#0` to middle MCP `#9`), calibrated to `~0.055` raw units at arm's length. |
+| **Lerp Smoothing Alpha** | `0.35` | `smoothed = prev + (raw - prev) * alpha`. Applied to both pinch and V-sign midpoints. |
+| **Pinch Enter Threshold** | `0.28` | Thumb-to-index distance normalized by hand size (wrist `#0` to middle MCP `#9`). |
 | **Hysteresis Exit Multiplier** | `1.50x` | Exit threshold = `enter * 1.50` (`0.42`). Eliminates pinch boundary flicker. |
 | **Edge Snap Zone Width** | `20%` | Screen edge margin (`X < 0.20` Left, `X > 0.80` Right, `Y < 0.20` Top Maximize, plus 4 corners). |
-| **Zone Arm Dwell Time** | `150 ms` | Time the pinched cursor must dwell inside an edge zone before it arms and pulses gold. |
-| **Snap Release Cooldown** | `800 ms` | Minimum time between consecutive snap actions; releasing outside an armed zone cancels the grab. |
+| **Zone Arm Dwell Time** | `150 ms` | Time the pinched cursor must dwell inside an edge zone before it arms. |
+| **Snap Release Cooldown** | `800 ms` | Minimum time between consecutive snap actions. |
 | **Left/Right Split Ratio** | `50%` | Width ratio (`0.30` – `0.70`) sent to `POST /api/window/snap`. |
-| **Stretch Gestures** | Enabled | **4-Corner Quarter Snaps**, **Throw Flick (`nextMonitor`)**, and **2-Hand Simultaneous Pinch Resize**. |
+| **V-Sign Scroll Enabled** | `true` | Enables peace-sign (`isVSign`) vertical scrolling. Pinch always takes priority. |
+| **Scroll Direction** | `Natural` | `Natural` (hand up = scroll up, positive wheel delta) or `Inverted` (`invertScroll: true`). |
+| **Scroll Gain** | `4000` | Wheel units per normalized frame height (`~1000` wheel units for a 25% vertical stroke, with `|dy|^1.2` curve). |
+| **Scroll Deadzone** | `0.002` | Minimum per-frame normalized `|dy|` before accumulating wheel movement. |
+| **V-Sign Spread Min** | `0.35` | Minimum normalized distance `dist(8,12) / dist(0,9)` separating a V-sign from two fingers held together. |
+| **Scroll Enter / Exit Hold** | `120 ms` / `150 ms` | Dwell times to enter and exit `SCROLLING` without flicker. Batching sends at most ~30 requests/sec clamped to `±1200`. |
 
 ---
 
-## 60-Second Judge Demo Script
+## 60-Second Demo Script
 
-1. **0:00 – 0:10 | Launch & Target Lock:**
-   Open **Notepad** (or VS Code) alongside the **W.A.V.E** browser window (`http://localhost:4200`). Point out the green **Win32 API Ready** indicator, the live **60 FPS GPU** badge, and the **TARGET WINDOW** footer automatically tracking Notepad while ignoring `"WAVEHUD"`.
-2. **0:10 – 0:25 | Spatial Pinch & Left/Right Half Snap:**
-   Raise one hand in front of the webcam. Show the 21-landmark gold skeleton and the tightening pinch ring. Pinch thumb and index finger together (**STATE: GRABBING**), drag into the left edge zone until it pulses (**ARMED: LEFT** with the ghost preview rectangle), and release — Notepad snaps flush to the left half of the monitor without covering the taskbar or leaving DWM border gaps.
-3. **0:25 – 0:40 | Top Maximize & 4-Corner Quarter Snap:**
-   Pinch again, drag to the top edge zone, dwell for 150ms, and release to **Maximize**. Pinch once more and drag to the **Top-Right** corner to snap Notepad into an exact top-right quarter window.
-4. **0:40 – 0:60 | Mouse Simulation Mode & Live Tuning:**
-   Click **Simulation Mode (Mouse)** in the header to demonstrate camera-free testing: click-and-drag across the viewport into the right zone and release to snap Notepad right. Switch the smoothing filter to **One Euro (1€)** or adjust the split ratio slider to **60%** and snap again.
+1. **0:00 – 0:15 | Safe Practice Checklist (`0/4` -> `4/4`):**
+   Open `http://localhost:4200`. Point out the **Backend connected** pill and **Live control off** (Practice mode). Click **Start camera** (or **Simulate**). Perform **Hover** (open hand), **Grab** (pinch thumb & index), **Snap to edge** (drag to left edge until armed and release), and **Scroll** (hold V-sign and move up/down, or hold `Shift` + move mouse in Simulation mode). Watch all 4 practice cards tick green (`Practice · 4/4`).
+2. **0:15 – 0:35 | Live Window Grab & Edge Snapping:**
+   Open a scrollable window (such as Notepad or a documentation page) alongside W.A.V.E. Click **Live control off -> Live control on** in the header. Pinch to grab the target window, drag into the left zone until **ARMED · LEFT** appears with the window title inside the ghost preview, and release — the window snaps flush to the left half of the display without covering the taskbar (`rcWork`) or leaving DWM border gaps.
+3. **0:35 – 0:50 | V-Sign Touchless Scrolling:**
+   Point at the scrollable window and hold a peace sign (**V-sign**: index & middle extended and spread, ring & pinky curled). On entry, the Windows cursor jumps once to your hand's position (`begin: true`), the HUD displays **SCROLL** with highlighted index/middle fingertips and a speed-proportional directional arrow, and moving your hand up/down smoothly scrolls the window.
+4. **0:50 – 1:00 | Live Calibration & Action Log:**
+   Press `S` to open the **W.A.V.E Settings** drawer. Flip **Scroll Direction** between **Natural** and **Inverted**, adjust **Scroll Gain**, and inspect the timestamped **Recent Action Log**.
 
 ---
 
 ## Known Limitations
 
-1. **Windows 10/11 Only:** Native window positioning relies on Win32 `user32.dll`, `dwmapi.dll`, and `shcore.dll`.
-2. **Browser Tab Must Stay Visible:** Browsers throttle `requestAnimationFrame` and webcam streams in backgrounded/minimized tabs. Use the **Compact** button (or **PiP Float** where supported) to park W.A.V.E cleanly in a corner of your screen.
-3. **Do Not Rename `"WAVEHUD"`:** The `<title>WAVEHUD</title>` in `frontend/src/index.html` matches `Scepter:SelfWindowTitleMatch` in `backend/Scepter.Api/appsettings.json` so W.A.V.E never grabs or snaps its own browser window.
-4. **Elevated (Admin) Windows:** Because UIPI (User Interface Privilege Isolation) prevents a standard-privilege process from moving an Administrator window (e.g., an elevated Task Manager or admin terminal), run `dotnet run` in an elevated shell if you want to snap Administrator windows.
-5. **Lighting:** Standard indoor lighting works best for webcam tracking; in dark rooms or environments without a camera, use **Simulation Mode (Mouse)**.
-
+1. **Windows 10/11 Only:** Native window positioning and `SendInput` mouse wheel injection require Win32 `user32.dll`, `dwmapi.dll`, and `shcore.dll`.
+2. **Browser Tab Must Stay Visible:** Browsers throttle `requestAnimationFrame` and camera streams in hidden tabs. W.A.V.E displays a warning banner if the tab is backgrounded; use the **Compact** toggle or **Picture-in-Picture (PiP)** button to keep the HUD visible while working in other apps.
+3. **Never Rename `<title>WAVEHUD</title>`:** Both `frontend/src/index.html` (`<title>WAVEHUD</title>`) and `backend/Scepter.Api/appsettings.json` (`"SelfWindowTitleMatch": "WAVEHUD"`) must match so the backend never grabs or snaps the W.A.V.E HUD window itself.
+4. **Elevated (Administrator) Windows (UIPI):** Windows User Interface Privilege Isolation prevents a normal-privilege process from moving or injecting `SendInput` wheel events into an elevated Administrator window. Run the backend in an Administrator terminal if you want to snap or scroll elevated apps.
+5. **Lighting:** Standard indoor lighting works best for MediaPipe hand landmark tracking; in low light or on machines without a webcam, use **Simulate** mode.
