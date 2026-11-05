@@ -4,21 +4,14 @@ import {
   Component,
   DestroyRef,
   ElementRef,
+  HostListener,
   NgZone,
   ViewChild,
-  effect,
-  inject,
-  signal
+  inject
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { CameraService } from '../../core/services/camera.service';
-import { HandTrackerService } from '../../core/services/hand-tracker.service';
-import { GestureEngineService } from '../../core/services/gesture-engine.service';
-import { WindowApiService } from '../../core/services/window-api.service';
-import { SettingsService } from '../../core/services/settings.service';
-import { GestureFrameSnapshot } from '../../core/models/gesture.model';
 import { Point2D } from '../../core/models/landmark.model';
-import { SnapPosition } from '../../core/models/snap-action.model';
+import { WaveViewModelStore } from '../../core/services/wave-view-model.store';
 import { HudOverlayComponent } from '../hud-overlay/hud-overlay.component';
 import { SettingsPanelComponent } from '../settings-panel/settings-panel.component';
 
@@ -27,866 +20,853 @@ import { SettingsPanelComponent } from '../settings-panel/settings-panel.compone
   standalone: true,
   imports: [CommonModule, HudOverlayComponent, SettingsPanelComponent],
   template: `
-    <div class="scepter-app" [class.compact-mode]="compactMode()">
-      <!-- Top Regal Header -->
-      <header class="top-bar glass-panel">
-        <div class="brand">
-          <div class="crown-emblem" aria-hidden="true">
-            <svg viewBox="0 0 36 36" width="26" height="26">
-              <defs>
-                <linearGradient id="goldGrad" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0%" stop-color="#ffe6a3" />
-                  <stop offset="50%" stop-color="#f5b942" />
-                  <stop offset="100%" stop-color="#c88a14" />
-                </linearGradient>
-              </defs>
-              <path
-                fill="url(#goldGrad)"
-                d="M4 26L7.5 11l6.5 6.5L18 6l4 11.5L28.5 11 32 26H4zm1 3h26v2.5H5V29z"
-              />
-              <circle cx="18" cy="4.2" r="2" fill="#fff3c4" />
+    <div
+      class="flex h-screen w-screen flex-col overflow-hidden bg-void text-foreground select-none"
+      [ngClass]="store.compactMode() ? 'p-2 gap-2' : 'p-3 sm:p-5 gap-3'">
+      <!-- Screen-reader live region for state & practice announcements -->
+      <div class="sr-only" aria-live="polite" aria-atomic="true">
+        {{ store.ariaAnnouncement() }}
+      </div>
+
+      <!-- HEADER -->
+      <header class="flex items-center justify-between gap-2 flex-wrap">
+        <!-- Brand Wordmark & Tagline -->
+        <div class="flex items-center gap-3">
+          <div
+            class="relative flex h-9 w-9 items-center justify-center rounded-xl border border-primary/40 bg-primary/10 glow-gold"
+            aria-hidden="true">
+            <svg viewBox="0 0 32 32" class="h-5 w-5" fill="none">
+              <g
+                stroke="currentColor"
+                class="text-primary"
+                stroke-width="1.5"
+                stroke-linecap="round">
+                <line x1="16" y1="26" x2="10" y2="18" />
+                <line x1="10" y1="18" x2="7" y2="9" />
+                <line x1="16" y1="26" x2="14" y2="16" />
+                <line x1="14" y1="16" x2="13" y2="5" />
+                <line x1="16" y1="26" x2="18" y2="16" />
+                <line x1="18" y1="16" x2="19" y2="6" />
+                <line x1="16" y1="26" x2="22" y2="18" />
+                <line x1="22" y1="18" x2="25" y2="10" />
+              </g>
+              <g class="fill-gold-bright">
+                <circle cx="16" cy="26" r="2" />
+                <circle cx="7" cy="9" r="1.8" />
+                <circle cx="13" cy="5" r="2" />
+                <circle cx="19" cy="6" r="1.8" />
+                <circle cx="25" cy="10" r="1.6" />
+              </g>
             </svg>
           </div>
-          <div class="brand-text">
-            <h1>W.A.V.E <span class="hud-tag">HUD</span></h1>
-            <p class="tagline">Windows Are Very Easily-moved</p>
+          <div>
+            <div class="flex items-center gap-2">
+              <span
+                class="font-display text-xl font-bold tracking-tight text-gold-gradient leading-none">
+                W.A.V.E
+              </span>
+              <span
+                *ngIf="store.simulationMode()"
+                class="rounded-full border border-primary/50 bg-primary/15 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-primary">
+                Simulation Active
+              </span>
+            </div>
+            <p
+              class="text-[11px] text-muted-foreground tracking-wider uppercase font-mono mt-0.5">
+              Windows Are Very Easily-moved
+            </p>
           </div>
         </div>
 
-        <!-- Status Chips -->
-        <div class="status-strip">
-          <!-- Gesture State Chip -->
-          <div class="chip state-chip" [attr.data-state]="frame().state">
-            <span class="dot"></span>
-            <span class="label">STATE:</span>
-            <strong>{{ frame().state === 'SCROLLING' ? 'SCROLL' : frame().state }}</strong>
-          </div>
-
-          <!-- FPS Counter -->
-          <div class="chip fps-chip">
-            <span class="label">FPS:</span>
-            <strong>{{ fps() }}</strong>
-            <span class="sub-badge" *ngIf="!simulationMode()">{{ trackerService.delegateUsed() }}</span>
-            <span class="sub-badge sim" *ngIf="simulationMode()">SIM</span>
-          </div>
-
-          <!-- Backend Connection Status -->
+        <!-- Right Header Controls -->
+        <div class="flex items-center gap-2 flex-wrap justify-end">
+          <!-- Backend Status Pill -->
           <div
-            class="chip conn-chip"
-            [class.connected]="apiService.connectionState() === 'connected'"
-            [class.unreachable]="apiService.connectionState() === 'unreachable'">
-            <span class="dot"></span>
+            class="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-mono border transition-colors"
+            [ngClass]="{
+              'border-glass-border bg-secondary/60 text-muted-foreground':
+                store.backendStatus() === 'checking',
+              'border-armed/40 bg-armed/10 text-armed':
+                store.backendStatus() === 'connected',
+              'border-destructive/50 bg-destructive/10 text-destructive':
+                store.backendStatus() === 'unreachable'
+            }"
+            role="status"
+            aria-label="Backend status">
+            <svg
+              *ngIf="store.backendStatus() === 'checking'"
+              viewBox="0 0 24 24"
+              class="h-3 w-3 animate-spin"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2">
+              <path d="M21 12a9 9 0 1 1-6.219-8.56" stroke-linecap="round" />
+            </svg>
+            <span
+              *ngIf="store.backendStatus() === 'connected'"
+              class="h-2 w-2 rounded-full bg-armed shadow-[0_0_8px_var(--armed)]"></span>
+            <span
+              *ngIf="store.backendStatus() === 'unreachable'"
+              class="h-2 w-2 rounded-full bg-destructive animate-pulse"></span>
             <span>
               {{
-                apiService.connectionState() === 'connected'
-                  ? 'Win32 API Ready'
-                  : apiService.connectionState() === 'checking'
-                    ? 'Connecting...'
-                    : 'API Offline (:5000)'
+                store.backendStatus() === 'checking'
+                  ? 'Checking…'
+                  : store.backendStatus() === 'connected'
+                    ? 'Backend connected'
+                    : 'Backend unreachable'
               }}
             </span>
           </div>
-        </div>
 
-        <!-- Action Controls -->
-        <div class="header-actions">
+          <!-- Live Control Toggle (Adapted from reference Air Mouse toggle) -->
           <button
             type="button"
-            class="btn-mode"
-            [class.active]="apiService.liveControl()"
-            [attr.aria-pressed]="apiService.liveControl()"
-            (click)="apiService.toggleLiveControl()"
-            title="Toggle Live Control (Off = Practice mode, On = Control real Windows)">
-            <span>Live control {{ apiService.liveControl() ? 'on' : 'off' }}</span>
+            (click)="store.toggleLiveControl()"
+            [attr.aria-pressed]="store.liveControl()"
+            aria-label="Toggle Live control mode"
+            title="Toggle Live control (Off = Practice mode, On = Control real Windows)"
+            class="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-mono border transition cursor-pointer"
+            [ngClass]="
+              store.liveControl()
+                ? 'border-armed/60 bg-armed/15 text-armed shadow-[0_0_16px_oklch(0.78_0.17_155_/_0.25)]'
+                : 'border-glass-border bg-secondary/60 text-muted-foreground hover:text-foreground hover:border-primary/40'
+            ">
+            <span
+              class="h-2 w-2 rounded-full"
+              [ngClass]="
+                store.liveControl()
+                  ? 'bg-armed shadow-[0_0_8px_var(--armed)]'
+                  : 'bg-muted-foreground'
+              "></span>
+            <span>{{ store.liveControl() ? 'Live control on' : 'Live control off' }}</span>
           </button>
 
+          <!-- Simulation Mode Toggle -->
           <button
             type="button"
-            class="btn-mode"
-            [class.active]="simulationMode()"
             (click)="toggleSimulationMode()"
-            title="Toggle Mouse Simulation Mode (Click = Pinch, Drag = Move, Shift + Move = Scroll)">
-            <span class="icon">{{ simulationMode() ? '🖱️' : '📷' }}</span>
-            <span>{{ simulationMode() ? 'Simulation Mode (Mouse)' : 'Webcam Mode' }}</span>
+            [attr.aria-pressed]="store.simulationMode()"
+            aria-label="Toggle Mouse Simulation mode"
+            title="Toggle Mouse Simulation mode (Click = Pinch, Drag = Move, Shift + Move = V-Sign Scroll)"
+            class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-mono border transition cursor-pointer"
+            [ngClass]="
+              store.simulationMode()
+                ? 'border-primary/60 bg-primary/15 text-primary shadow-[0_0_14px_oklch(0.78_0.16_75_/_0.25)]'
+                : 'border-glass-border bg-secondary/60 text-muted-foreground hover:text-foreground hover:border-primary/40'
+            ">
+            <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="6" y="3" width="12" height="18" rx="6" />
+              <line x1="12" y1="7" x2="12" y2="11" stroke-linecap="round" />
+            </svg>
+            <span>{{ store.simulationMode() ? 'Simulating' : 'Simulate' }}</span>
           </button>
 
+          <!-- Camera Start / Stop Icon Button -->
           <button
             type="button"
-            class="btn-icon"
-            [class.active]="compactMode()"
-            (click)="compactMode.set(!compactMode())"
-            title="Toggle Compact Corner Mode">
-            {{ compactMode() ? 'Expand UI' : 'Compact' }}
+            (click)="toggleCamera()"
+            [attr.aria-label]="
+              store.cameraStatus() === 'active' ? 'Stop camera' : 'Start camera'
+            "
+            [title]="store.cameraStatus() === 'active' ? 'Stop camera' : 'Start camera'"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-glass-border bg-secondary/50 text-foreground transition hover:border-primary/40 hover:bg-secondary cursor-pointer">
+            <svg
+              *ngIf="store.cameraStatus() === 'active'"
+              viewBox="0 0 24 24"
+              class="h-4 w-4 text-primary"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2">
+              <path d="m22 8-6 4 6 4V8Z" stroke-linecap="round" stroke-linejoin="round" />
+              <rect width="14" height="12" x="2" y="6" rx="2" ry="2" />
+            </svg>
+            <svg
+              *ngIf="store.cameraStatus() !== 'active'"
+              viewBox="0 0 24 24"
+              class="h-4 w-4 text-muted-foreground"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2">
+              <path d="M10.66 6H14a2 2 0 0 1 2 2v2.5l5.248-3.062A.5.5 0 0 1 22 7.87v8.196" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M16 16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2" stroke-linecap="round" stroke-linejoin="round" />
+              <line x1="2" y1="2" x2="22" y2="22" stroke-linecap="round" />
+            </svg>
           </button>
 
+          <!-- Always-on-Top PiP Button -->
           <button
             *ngIf="pipSupported"
             type="button"
-            class="btn-mode"
-            [class.active]="isPipActive()"
             (click)="toggleDocumentPiP()"
-            title="Pop HUD into an Always-on-Top Picture-in-Picture window so gestures work while you focus other desktop apps">
-            <span>{{ isPipActive() ? '↙ Dock HUD' : '⧉ PiP Float (Always-on-Top)' }}</span>
+            [attr.aria-pressed]="store.isPipActive()"
+            aria-label="Pop out HUD in always-on-top Picture-in-Picture window"
+            title="Pop out Always-on-Top HUD"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-glass-border bg-secondary/50 text-foreground transition hover:border-primary/40 hover:bg-secondary cursor-pointer"
+            [ngClass]="{ 'border-primary/60 text-primary': store.isPipActive() }">
+            <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M8 4.5v5H3m-1-6 6 6m13 0v-3c0-1.16-.84-2-2-2h-7m-9 9v2c0 1.05.95 2 2 2h3" stroke-linecap="round" stroke-linejoin="round" />
+              <rect width="10" height="7" x="12" y="13.5" rx="2" />
+            </svg>
           </button>
 
+          <!-- Compact Mode Toggle Button -->
           <button
             type="button"
-            class="btn-icon"
-            [class.active]="showSettings()"
-            (click)="showSettings.set(!showSettings())">
-            ⚙ Tuning
+            (click)="store.toggleCompactMode()"
+            [attr.aria-pressed]="store.compactMode()"
+            aria-label="Toggle compact stage mode"
+            title="Toggle compact mode"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-glass-border bg-secondary/50 text-foreground transition hover:border-primary/40 hover:bg-secondary cursor-pointer"
+            [ngClass]="{ 'border-primary/60 text-primary': store.compactMode() }">
+            <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="4 14 10 14 10 20" stroke-linecap="round" stroke-linejoin="round" />
+              <polyline points="20 10 14 10 14 4" stroke-linecap="round" stroke-linejoin="round" />
+              <line x1="14" y1="10" x2="21" y2="3" stroke-linecap="round" />
+              <line x1="3" y1="21" x2="10" y2="14" stroke-linecap="round" />
+            </svg>
+          </button>
+
+          <!-- Sound Mute (M) Button -->
+          <button
+            type="button"
+            (click)="store.toggleMute()"
+            [attr.aria-pressed]="store.muted()"
+            [attr.aria-label]="store.muted() ? 'Unmute sound cues' : 'Mute sound cues'"
+            title="Toggle sound cues (M)"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-glass-border bg-secondary/50 text-foreground transition hover:border-primary/40 hover:bg-secondary cursor-pointer">
+            <svg
+              *ngIf="!store.muted()"
+              viewBox="0 0 24 24"
+              class="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07" stroke-linecap="round" />
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14" stroke-linecap="round" />
+            </svg>
+            <svg
+              *ngIf="store.muted()"
+              viewBox="0 0 24 24"
+              class="h-4 w-4 text-muted-foreground"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" stroke-linecap="round" stroke-linejoin="round" />
+              <line x1="22" y1="9" x2="16" y2="15" stroke-linecap="round" />
+              <line x1="16" y1="9" x2="22" y2="15" stroke-linecap="round" />
+            </svg>
+          </button>
+
+          <!-- Gesture Guide (C) Button -->
+          <button
+            type="button"
+            (click)="store.toggleGuideModal(true)"
+            aria-label="Open gesture guide"
+            title="Gesture guide (C)"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-glass-border bg-secondary/50 text-foreground transition hover:border-primary/40 hover:bg-secondary cursor-pointer">
+            <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" stroke-linecap="round" stroke-linejoin="round" />
+              <path d="M12 17h.01" stroke-linecap="round" />
+            </svg>
+          </button>
+
+          <!-- Settings Drawer (S) Button -->
+          <button
+            type="button"
+            (click)="store.toggleSettingsDrawer(true)"
+            aria-label="Open settings drawer"
+            title="Settings (S)"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-glass-border bg-secondary/50 text-foreground transition hover:border-primary/40 hover:bg-secondary cursor-pointer">
+            <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="4" y1="21" x2="4" y2="14" stroke-linecap="round" />
+              <line x1="4" y1="10" x2="4" y2="3" stroke-linecap="round" />
+              <line x1="12" y1="21" x2="12" y2="12" stroke-linecap="round" />
+              <line x1="12" y1="8" x2="12" y2="3" stroke-linecap="round" />
+              <line x1="20" y1="21" x2="20" y2="16" stroke-linecap="round" />
+              <line x1="20" y1="12" x2="20" y2="3" stroke-linecap="round" />
+              <line x1="2" y1="14" x2="6" y2="14" stroke-linecap="round" />
+              <line x1="10" y1="8" x2="14" y2="8" stroke-linecap="round" />
+              <line x1="18" y1="16" x2="22" y2="16" stroke-linecap="round" />
+            </svg>
           </button>
         </div>
       </header>
 
-      <!-- Main Spatial Workspace -->
-      <main class="workspace">
-        <!-- Placeholder shown in the main tab while the HUD viewport is floating in Always-on-Top PiP -->
-        <div #pipHostSlot class="pip-host-slot">
-          <div class="pip-active-banner glass-panel" *ngIf="isPipActive()">
-            <div class="pill-gold">ALWAYS-ON-TOP PIP ACTIVE</div>
-            <h2>Scepter HUD is Floating Above Your Desktop</h2>
-            <p>
-              Focus and work inside any desktop window (Notepad, VS Code, Chrome, Explorer) —
-              your floating Scepter HUD stays active and unthrottled on top.
-            </p>
-            <button type="button" class="btn-gold" (click)="toggleDocumentPiP()">
-              Dock HUD Back to Browser Tab
-            </button>
-          </div>
-
-          <!-- Viewport Container (Video + Canvas HUD + Simulation Surface) -->
-          <section
-            #viewportContainer
-            class="viewport-card glass-panel"
-            [class.sim-active]="simulationMode()"
-            [class.pip-floating]="isPipActive()"
-            (pointerdown)="onSimPointerDown($event)"
-            (pointermove)="onSimPointerMove($event)"
-            (pointerup)="onSimPointerUp($event)"
-            (pointerleave)="onSimPointerLeave()">
-
-          <!-- Mirrored Webcam Video Element -->
-          <video
-            #webcamVideo
-            class="webcam-video"
-            [class.hidden]="simulationMode()"
-            playsinline
-            muted></video>
-
-          <!-- Simulation Mode Interactive Grid Backdrop -->
-          <div class="sim-backdrop" *ngIf="simulationMode()">
-            <div class="sim-instructions">
-              <span class="pill-gold">MOUSE SIMULATION ACTIVE</span>
-              <h2>Click &amp; Hold to Pinch-Grab &bull; Drag to an Edge Zone &bull; Release to Snap</h2>
-              <p>
-                Feeds synthetic pointer coordinates into the exact same
-                <code>GestureStateMachine</code> &amp; Win32 P/Invoke pipeline.
-              </p>
-            </div>
-          </div>
-
-          <!-- Camera Permission / Missing / Loading Overlay (when in Webcam mode) -->
-          <div
-            class="camera-status-overlay"
-            *ngIf="!simulationMode() && (cameraService.state() !== 'active' || trackerService.status() !== 'ready')">
-            <div class="status-modal glass-panel">
-              <ng-container *ngIf="cameraService.state() === 'requesting' || trackerService.status() === 'loading'">
-                <div class="spinner"></div>
-                <h3>Initializing Spatial Vision...</h3>
-                <p>Loading local MediaPipe HandLandmarker WASM &amp; GPU delegate.</p>
-              </ng-container>
-
-              <ng-container *ngIf="cameraService.state() === 'denied' || cameraService.state() === 'missing' || cameraService.state() === 'error'">
-                <div class="warn-badge">Camera Unavailable</div>
-                <h3>{{ cameraService.state() === 'denied' ? 'Camera Permission Denied' : cameraService.state() === 'error' ? 'Camera Not Delivering Video' : 'No Webcam Detected' }}</h3>
-                <p>{{ cameraService.errorMessage() }}</p>
-                <div class="modal-actions">
-                  <button type="button" class="btn-gold" (click)="enableSimulationMode()">
-                    Switch to Mouse Simulation Mode
-                  </button>
-                  <button type="button" class="btn-outline" (click)="retryWebcam()">
-                    Retry Camera
-                  </button>
-                </div>
-              </ng-container>
-            </div>
-          </div>
-
-          <!-- Layered Canvas HUD Overlay -->
-          <app-hud-overlay
-            [frame]="frame()"
-            [settings]="settingsService.settings()"
-            [simulationMode]="simulationMode()" />
-
-          <!-- Bottom Telemetry Bar inside Viewport -->
-          <div class="viewport-hud-footer">
-            <div class="telemetry-item">
-              <span class="k">TARGET WINDOW</span>
-              <span class="v highlight">
-                {{ apiService.activeWindow()?.title || 'None detected' }}
-                <small *ngIf="apiService.activeWindow()?.processName">
-                  ({{ apiService.activeWindow()?.processName }})
-                </small>
-              </span>
-            </div>
-
-            <div class="telemetry-item" *ngIf="apiService.lastSnapResult() as last">
-              <span class="k">LAST ACTION</span>
-              <span class="v" [class.err]="!last.success">
-                {{ last.message }}
-              </span>
-            </div>
-
-            <div class="telemetry-item metrics">
-              <span>Pinch Ratio: <strong>{{ frame().normalizedPinchDistance | number:'1.2-2' }}</strong></span>
-              <span *ngIf="frame().armedZone" class="armed-pill">ARMED: {{ frame().armedZone | uppercase }}</span>
-            </div>
-          </div>
-          </section>
+      <!-- MAIN STAGE HOST (supports Document Picture-in-Picture reparenting) -->
+      <div #pipHostSlot class="relative flex flex-1 min-h-[240px]">
+        <!-- Placeholder shown in main tab when stage is popped out into Always-on-Top PiP -->
+        <div
+          *ngIf="store.isPipActive()"
+          class="flex h-full w-full flex-col items-center justify-center rounded-[1.75rem] border border-glass-border glass p-6 text-center">
+          <span
+            class="mb-2 rounded-full border border-primary/40 bg-primary/10 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-primary">
+            Always-on-Top PiP Active
+          </span>
+          <h2 class="font-display text-lg font-semibold text-gold-gradient">
+            W.A.V.E HUD is floating above your desktop
+          </h2>
+          <p class="mt-1 max-w-md text-xs text-muted-foreground">
+            Focus any Windows app to snap or V-sign scroll it while the floating HUD stays active.
+          </p>
+          <button
+            type="button"
+            (click)="toggleDocumentPiP()"
+            class="mt-4 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground shadow transition hover:bg-primary/90 cursor-pointer">
+            Dock HUD back to tab
+          </button>
         </div>
 
-        <!-- Side Panel: Quick Deck + Live Calibration Settings -->
-        <aside class="side-column" *ngIf="!compactMode()">
-          <!-- Direct Command Deck (Quick Test & Judge Demo Controls) -->
-          <div class="quick-deck glass-panel">
-            <div class="deck-header">
-              <h3>Royal Command Deck</h3>
-              <span class="deck-sub">Instant Win32 Snap Trigger</span>
-            </div>
-            <p class="deck-target">
-              Active Target:
-              <strong>{{ apiService.activeWindow()?.title || 'Waiting for eligible desktop window...' }}</strong>
-            </p>
-            <div class="snap-buttons-grid">
-              <button type="button" (click)="triggerDirectSnap('topLeft')">↖ Top Left</button>
-              <button type="button" class="primary-snap" (click)="triggerDirectSnap('top')">↑ Maximize</button>
-              <button type="button" (click)="triggerDirectSnap('topRight')">↗ Top Right</button>
-              <button type="button" class="primary-snap" (click)="triggerDirectSnap('left')">← Left Half</button>
-              <button type="button" class="primary-snap" (click)="triggerDirectSnap('right')">Right Half →</button>
-              <button type="button" (click)="triggerDirectSnap('bottomLeft')">↙ Btm Left</button>
-              <button type="button" (click)="triggerDirectSnap('nextMonitor')">⇄ Next Monitor</button>
-              <button type="button" (click)="triggerDirectSnap('bottomRight')">↘ Btm Right</button>
-            </div>
+        <!-- INTERACTIVE STAGE -->
+        <main
+          #viewportContainer
+          class="relative flex-1 min-h-[240px] w-full rounded-[1.75rem] overflow-hidden border border-glass-border bg-background grid-lines shadow-2xl"
+          [ngClass]="{
+            'cursor-crosshair': store.simulationMode(),
+            '!rounded-none !border-0': store.isPipActive()
+          }"
+          (pointerdown)="onSimPointerDown($event)"
+          (pointermove)="onSimPointerMove($event)"
+          (pointerup)="onSimPointerUp($event)"
+          (pointerleave)="onSimPointerLeave()">
+          <!-- Mirrored Webcam Video -->
+          <video
+            #webcamVideo
+            playsinline
+            muted
+            class="absolute inset-0 h-full w-full object-cover scale-x-[-1] transition-opacity duration-500"
+            [ngClass]="
+              !store.simulationMode() && store.cameraStatus() === 'active'
+                ? 'opacity-90'
+                : 'opacity-0 pointer-events-none'
+            "></video>
 
-            <!-- Window Cycling (Virtual Alt+Tab) Controls -->
-            <div class="cycle-section">
-              <div class="cycle-header">
-                <span class="cycle-title">Window Cycling (Wave or Click)</span>
-                <div class="cycle-btn-pair">
-                  <button type="button" class="btn-cycle" (click)="triggerCycle('prev')" title="Cycle to Previous Window">
-                    ◀ Prev
-                  </button>
-                  <button type="button" class="btn-cycle" (click)="triggerCycle('next')" title="Cycle to Next Window (Push Current to Back)">
-                    Next ▶
-                  </button>
-                </div>
+          <!-- Subtle Stage Vignette -->
+          <div
+            class="absolute inset-0 bg-gradient-to-t from-background/70 via-transparent to-background/30 pointer-events-none"></div>
+
+          <!-- Canvas HUD Overlay (runs rAF loop outside Angular zone) -->
+          <app-hud-overlay />
+
+          <!-- Simulation Mode Helper Banner at Top-Center -->
+          <div
+            *ngIf="store.simulationMode()"
+            class="pointer-events-none absolute top-3 left-1/2 z-20 -translate-x-1/2 hidden md:flex items-center gap-2 rounded-full border border-primary/40 glass px-3.5 py-1 font-mono text-[11px] text-primary">
+            <span class="h-2 w-2 rounded-full bg-primary animate-pulse"></span>
+            <span>
+              SIMULATION · Click &amp; hold = Grab · Drag to edge &amp; release = Snap · Hold Shift + move = V-Scroll
+            </span>
+          </div>
+
+          <!-- Top-Left: Gesture State Card (matches reference Wn) -->
+          <div class="pointer-events-none absolute top-3 left-3 z-20 max-w-md">
+            <div class="glass rounded-2xl px-4 py-2.5 flex items-center gap-3">
+              <div class="relative flex h-3 w-3 shrink-0 items-center justify-center">
+                <span
+                  *ngIf="store.gestureState() !== 'IDLE'"
+                  class="absolute inline-flex h-full w-full rounded-full opacity-75 animate-ping"
+                  [ngClass]="{
+                    'bg-primary': store.stateMeta().tone === 'gold',
+                    'bg-gold-bright': store.stateMeta().tone === 'gold-bright',
+                    'bg-armed': store.stateMeta().tone === 'armed'
+                  }"></span>
+                <span
+                  class="relative inline-flex h-2.5 w-2.5 rounded-full"
+                  [ngClass]="{
+                    'bg-idle': store.stateMeta().tone === 'idle',
+                    'bg-primary': store.stateMeta().tone === 'gold',
+                    'bg-gold-bright': store.stateMeta().tone === 'gold-bright',
+                    'bg-armed': store.stateMeta().tone === 'armed'
+                  }"></span>
               </div>
+              <div class="min-w-0">
+                <div class="flex items-center gap-2">
+                  <span
+                    class="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                    State
+                  </span>
+                  <span
+                    class="font-display text-sm font-semibold tracking-tight"
+                    [ngClass]="{
+                      'text-muted-foreground': store.stateMeta().tone === 'idle',
+                      'text-primary': store.stateMeta().tone === 'gold',
+                      'text-gold-bright': store.stateMeta().tone === 'gold-bright',
+                      'text-armed': store.stateMeta().tone === 'armed'
+                    }">
+                    {{ store.stateMeta().label }}
+                  </span>
+                  <span
+                    *ngIf="
+                      (store.gestureState() === 'GRABBING' ||
+                        store.gestureState() === 'DRAGGING') &&
+                      store.grabbedWindowTitle()
+                    "
+                    class="truncate max-w-[160px] rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] text-primary">
+                    {{ store.grabbedWindowTitle() }}
+                  </span>
+                </div>
+                <p class="text-xs text-muted-foreground leading-snug">
+                  {{ store.stateMeta().hint }}
+                </p>
+              </div>
+            </div>
+          </div>
 
-              <div class="window-stack-list" *ngIf="apiService.recentWindows().length > 0">
+          <!-- Top-Right: Contextual Warning Banners (Backend Unreachable / Tab Hidden) -->
+          <div class="absolute top-3 right-3 z-20 flex flex-col gap-2 max-w-xs">
+            <!-- Backend Unreachable Alert when Live Control is ON -->
+            <div
+              *ngIf="store.liveControl() && store.backendStatus() === 'unreachable'"
+              class="glass rounded-xl p-3 border border-destructive/50 text-xs flex items-start gap-2.5">
+              <svg
+                viewBox="0 0 24 24"
+                class="h-4 w-4 text-destructive shrink-0 mt-0.5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2">
+                <path d="M2 20h.01M7 20v-4M12 20v-8M17 20V8M22 4v16" stroke-linecap="round" />
+              </svg>
+              <div class="flex-1">
+                <div class="font-semibold text-foreground">Backend unreachable</div>
+                <p class="text-muted-foreground mt-0.5">
+                  Start the local W.A.V.E backend on <code>localhost:5000</code> or switch off Live control to practice.
+                </p>
                 <button
                   type="button"
-                  class="stack-item"
-                  *ngFor="let win of apiService.recentWindows(); let idx = index"
-                  [class.active]="win.handle === apiService.activeWindow()?.handle"
-                  (click)="selectTargetWindow(win.handle)">
-                  <span class="stack-rank">#{{ idx + 1 }}</span>
-                  <span class="stack-name">{{ win.title }}</span>
-                  <span class="stack-proc">{{ win.processName }}</span>
+                  (click)="store.retryBackendHealth()"
+                  class="mt-2 inline-flex items-center gap-1 text-primary hover:underline font-mono text-[11px] cursor-pointer">
+                  <svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" stroke-linecap="round" />
+                    <path d="M21 3v5h-5" stroke-linecap="round" />
+                  </svg>
+                  Retry
+                </button>
+              </div>
+            </div>
+
+            <!-- Tab Hidden Warning -->
+            <div
+              *ngIf="store.tabHidden()"
+              class="glass rounded-xl p-3 border border-primary/50 text-xs flex items-start gap-2.5">
+              <svg
+                viewBox="0 0 24 24"
+                class="h-4 w-4 text-primary shrink-0 mt-0.5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2">
+                <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+                <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
+                <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
+                <line x1="2" y1="2" x2="22" y2="22" stroke-linecap="round" />
+              </svg>
+              <div class="flex-1">
+                <div class="font-semibold text-foreground">Tab was in the background</div>
+                <p class="text-muted-foreground mt-0.5">
+                  Browsers pause camera frames in hidden tabs. Keep W.A.V.E visible or pop out the PiP HUD.
+                </p>
+                <button
+                  type="button"
+                  (click)="store.setTabHidden(false)"
+                  class="mt-1.5 text-primary hover:underline font-mono text-[11px] cursor-pointer">
+                  Got it
                 </button>
               </div>
             </div>
           </div>
 
-          <!-- Collapsible or Always-Visible Settings Panel -->
-          <app-settings-panel *ngIf="showSettings()" />
-        </aside>
-      </main>
+          <!-- Center Stage Overlay: Turn on camera to start (matches reference Yr) -->
+          <div
+            *ngIf="!store.simulationMode() && store.cameraStatus() === 'idle'"
+            class="absolute inset-0 z-20 flex items-center justify-center p-6">
+            <div class="glass-strong rounded-3xl p-8 max-w-md text-center space-y-5 border border-primary/30">
+              <div class="relative mx-auto h-16 w-16 flex items-center justify-center">
+                <div class="absolute inset-0 rounded-full bg-primary/20 blur-xl animate-pulse-gold"></div>
+                <div
+                  class="relative flex h-16 w-16 items-center justify-center rounded-2xl border border-primary/50 bg-primary/10">
+                  <svg
+                    viewBox="0 0 24 24"
+                    class="h-7 w-7 text-primary"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2">
+                    <path d="m22 8-6 4 6 4V8Z" stroke-linecap="round" stroke-linejoin="round" />
+                    <rect width="14" height="12" x="2" y="6" rx="2" ry="2" />
+                  </svg>
+                </div>
+              </div>
+              <div class="space-y-2">
+                <h2 class="font-display text-2xl font-bold tracking-tight text-gold-gradient">
+                  Turn on your camera to start
+                </h2>
+                <p class="text-sm text-muted-foreground leading-relaxed">
+                  Video never leaves your device. Practice every gesture here before taking over your desktop.
+                </p>
+              </div>
+              <div class="flex flex-col sm:flex-row items-center justify-center gap-2.5">
+                <button
+                  type="button"
+                  (click)="startCamera()"
+                  class="inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl bg-primary px-6 py-2.5 font-display text-sm font-semibold text-primary-foreground glow-gold transition hover:bg-primary/90 cursor-pointer">
+                  <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="m22 8-6 4 6 4V8Z" stroke-linecap="round" stroke-linejoin="round" />
+                    <rect width="14" height="12" x="2" y="6" rx="2" ry="2" />
+                  </svg>
+                  Start camera
+                </button>
+                <button
+                  type="button"
+                  (click)="enableSimulationMode()"
+                  class="inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl border border-glass-border bg-secondary/70 px-4 py-2.5 text-xs font-medium text-foreground transition hover:border-primary/40 cursor-pointer">
+                  Use Mouse Simulation
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Center Stage Overlay: Camera Loading / Permission Denied / Missing / Error (matches reference Kr) -->
+          <div
+            *ngIf="
+              !store.simulationMode() &&
+              store.cameraStatus() !== 'idle' &&
+              (store.cameraStatus() !== 'active' || store.trackerStatus() !== 'ready')
+            "
+            class="absolute inset-0 z-20 flex items-center justify-center p-6">
+            <div class="glass-strong rounded-3xl p-8 max-w-md text-center space-y-4 border border-glass-border">
+              <!-- Loading Spinner -->
+              <ng-container
+                *ngIf="
+                  store.cameraStatus() === 'requesting' ||
+                  store.trackerStatus() === 'loading'
+                ">
+                <svg
+                  viewBox="0 0 24 24"
+                  class="h-10 w-10 text-primary mx-auto animate-spin"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2">
+                  <path d="M21 12a9 9 0 1 1-6.219-8.56" stroke-linecap="round" />
+                </svg>
+                <h3 class="font-display text-xl font-semibold text-foreground">
+                  {{
+                    store.cameraStatus() === 'requesting'
+                      ? 'Starting camera…'
+                      : 'Loading hand-tracking model…'
+                  }}
+                </h3>
+                <p class="text-sm text-muted-foreground leading-relaxed">
+                  {{
+                    store.cameraStatus() === 'requesting'
+                      ? 'Approve the browser camera prompt if one appears.'
+                      : 'Warming up MediaPipe Hand Landmarker in your browser (runs 100% locally).'
+                  }}
+                </p>
+              </ng-container>
+
+              <!-- Denied / Missing / Error -->
+              <ng-container
+                *ngIf="
+                  store.cameraStatus() === 'denied' ||
+                  store.cameraStatus() === 'missing' ||
+                  store.cameraStatus() === 'error' ||
+                  store.trackerStatus() === 'error'
+                ">
+                <svg
+                  viewBox="0 0 24 24"
+                  class="h-10 w-10 text-destructive mx-auto"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" stroke-linecap="round" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" stroke-linecap="round" />
+                </svg>
+                <h3 class="font-display text-xl font-semibold text-foreground">
+                  {{
+                    store.cameraStatus() === 'denied'
+                      ? 'Camera access was blocked'
+                      : store.cameraStatus() === 'missing'
+                        ? 'No camera detected'
+                        : 'Camera error'
+                  }}
+                </h3>
+                <p class="text-sm text-muted-foreground leading-relaxed">
+                  {{
+                    store.cameraError() ||
+                      'Could not start the webcam. You can retry or switch to Mouse Simulation mode.'
+                  }}
+                </p>
+                <div class="flex flex-wrap items-center justify-center gap-2 pt-2">
+                  <button
+                    type="button"
+                    (click)="startCamera()"
+                    class="inline-flex items-center gap-2 rounded-xl border border-glass-border bg-secondary px-4 py-2 text-xs font-medium text-foreground transition hover:border-primary/40 cursor-pointer">
+                    Try again
+                  </button>
+                  <button
+                    type="button"
+                    (click)="enableSimulationMode()"
+                    class="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 cursor-pointer">
+                    Switch to Simulation Mode
+                  </button>
+                </div>
+              </ng-container>
+            </div>
+          </div>
+
+          <!-- Bottom-Right Stats / Telemetry Card (matches reference qn) -->
+          <div class="pointer-events-none absolute bottom-3 right-3 left-3 sm:left-auto z-20 flex justify-end">
+            <div class="glass rounded-2xl px-4 py-2.5 flex items-center gap-4 text-xs font-mono flex-wrap">
+              <!-- Gesture State Chip -->
+              <div class="flex items-center gap-1.5">
+                <span class="text-muted-foreground uppercase text-[10px]">Mode</span>
+                <span
+                  class="rounded px-1.5 py-0.5 font-semibold text-[11px]"
+                  [ngClass]="{
+                    'bg-secondary text-muted-foreground': store.stateMeta().tone === 'idle',
+                    'bg-primary/15 text-primary': store.stateMeta().tone === 'gold',
+                    'bg-primary/25 text-gold-bright': store.stateMeta().tone === 'gold-bright',
+                    'bg-armed/20 text-armed': store.stateMeta().tone === 'armed'
+                  }">
+                  {{ store.stateMeta().chip }}
+                </span>
+              </div>
+              <div class="h-4 w-px bg-glass-border"></div>
+              <!-- FPS -->
+              <div>
+                <span class="text-muted-foreground uppercase text-[10px]">FPS</span>
+                <span class="ml-1.5 text-foreground font-semibold tabular-nums">
+                  {{
+                    store.cameraStatus() === 'active' || store.simulationMode()
+                      ? store.fps()
+                      : '—'
+                  }}
+                </span>
+              </div>
+              <div class="h-4 w-px bg-glass-border"></div>
+              <!-- 5-Bar Tracking Quality -->
+              <div class="flex items-center gap-1.5" title="Tracking confidence">
+                <span class="text-muted-foreground uppercase text-[10px]">Tracking</span>
+                <div class="flex items-end gap-0.5 h-3">
+                  <span
+                    *ngFor="let lit of store.confidenceBars(); let i = index"
+                    class="w-1 rounded-sm transition-colors"
+                    [style.height.px]="4 + i * 2"
+                    [ngClass]="lit ? 'bg-primary' : 'bg-muted'"></span>
+                </div>
+              </div>
+              <div class="h-4 w-px bg-glass-border"></div>
+              <!-- Last Action -->
+              <div class="max-w-[200px] truncate">
+                <span class="text-muted-foreground uppercase text-[10px]">Last</span>
+                <span class="ml-1.5 text-primary font-semibold">
+                  {{ store.lastResult() || '—' }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+
+      <!-- PRACTICE CHECKLIST & 4 GESTURE CARDS (matches reference ir) -->
+      <section
+        *ngIf="!store.compactMode()"
+        class="glass rounded-2xl p-3"
+        aria-label="Practice checklist">
+        <div class="flex items-center justify-between gap-2 mb-2 px-1">
+          <div class="flex items-center gap-2">
+            <svg
+              viewBox="0 0 24 24"
+              class="h-3.5 w-3.5 text-primary"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2">
+              <path
+                d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"
+                stroke-linecap="round"
+                stroke-linejoin="round" />
+            </svg>
+            <span class="font-mono text-xs uppercase tracking-widest text-primary">
+              Practice · {{ store.practiceCompletedCount() }}/{{ store.practiceCards.length }}
+            </span>
+            <span
+              *ngIf="store.practiceCompletedCount() === store.practiceCards.length"
+              class="text-xs text-armed font-medium">
+              All gestures mastered ✨
+            </span>
+          </div>
+          <button
+            type="button"
+            (click)="store.resetPractice()"
+            class="inline-flex items-center gap-1 text-[11px] font-mono text-muted-foreground hover:text-foreground transition cursor-pointer">
+            <svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" stroke-linecap="round" />
+              <path d="M3 3v5h5" stroke-linecap="round" />
+            </svg>
+            Reset
+          </button>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div
+            *ngFor="let card of store.practiceCards"
+            class="rounded-xl px-3 py-2 border transition flex items-start gap-2.5"
+            [ngClass]="
+              store.practiceProgress()[card.id]
+                ? 'border-armed/60 bg-armed/10'
+                : 'border-glass-border bg-secondary/40'
+            ">
+            <div
+              class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border transition"
+              [ngClass]="
+                store.practiceProgress()[card.id]
+                  ? 'border-armed bg-armed text-background'
+                  : 'border-muted-foreground/40'
+              ">
+              <svg
+                *ngIf="store.practiceProgress()[card.id]"
+                viewBox="0 0 24 24"
+                class="h-2.5 w-2.5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="3">
+                <polyline points="20 6 9 17 4 12" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </div>
+            <div class="min-w-0">
+              <div class="font-display text-xs font-semibold text-foreground leading-tight">
+                {{ card.name }}
+              </div>
+              <div class="text-[11px] text-muted-foreground leading-tight mt-0.5">
+                {{ card.hint }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- FOOTER -->
+      <footer
+        class="flex items-center justify-between text-[11px] text-muted-foreground font-mono px-1 flex-wrap gap-2">
+        <span class="inline-flex items-center gap-1.5">
+          <span class="h-1.5 w-1.5 rounded-full bg-armed"></span>
+          Video never leaves your device.
+        </span>
+        <span>
+          {{
+            store.liveControl()
+              ? 'Live control is moving your real Windows apps.'
+              : 'Practice mode: turn on Live control to control your computer.'
+          }}
+        </span>
+      </footer>
+
+      <!-- BOTTOM-CENTER TOAST NOTIFICATIONS -->
+      <div
+        *ngIf="store.toasts().length > 0"
+        class="pointer-events-none fixed bottom-12 left-1/2 z-50 flex -translate-x-1/2 flex-col items-center gap-2">
+        <div
+          *ngFor="let toast of store.toasts()"
+          class="pointer-events-auto glass-strong flex items-center gap-3 rounded-2xl border px-4 py-2.5 text-xs shadow-2xl transition-all"
+          [ngClass]="{
+            'border-primary/50 text-foreground': toast.tone === 'gold' || toast.tone === 'info',
+            'border-armed/60 text-armed': toast.tone === 'armed',
+            'border-destructive/60 text-destructive': toast.tone === 'warn'
+          }">
+          <div>
+            <div class="font-display font-semibold">{{ toast.title }}</div>
+            <div *ngIf="toast.description" class="text-[11px] text-muted-foreground">
+              {{ toast.description }}
+            </div>
+          </div>
+          <button
+            type="button"
+            (click)="store.dismissToast(toast.id)"
+            aria-label="Dismiss notification"
+            class="text-muted-foreground hover:text-foreground cursor-pointer">
+            ✕
+          </button>
+        </div>
+      </div>
+
+      <!-- GESTURE GUIDE MODAL (C) -->
+      <div
+        *ngIf="store.guideOpen()"
+        class="fixed inset-0 z-50 flex items-center justify-center p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="wave-guide-title">
+        <div
+          class="fixed inset-0 bg-background/75 backdrop-blur-sm"
+          (click)="store.toggleGuideModal(false)"
+          aria-hidden="true"></div>
+        <div
+          class="relative z-10 w-full max-w-lg rounded-3xl border border-glass-border glass-strong p-6 text-foreground shadow-2xl space-y-5">
+          <div class="flex items-start justify-between gap-4">
+            <div class="flex items-center gap-3">
+              <img
+                src="assets/wave-logo.png"
+                alt="W.A.V.E emblem"
+                class="h-12 w-12 rounded-2xl border border-primary/40 object-cover" />
+              <div>
+                <h2
+                  id="wave-guide-title"
+                  class="font-display text-xl font-bold text-gold-gradient">
+                  W.A.V.E Gesture Guide
+                </h2>
+                <p class="text-xs text-muted-foreground">
+                  Four spatial gestures to move, snap, and scroll your Windows desktop.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              (click)="store.toggleGuideModal(false)"
+              aria-label="Close gesture guide"
+              class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-glass-border bg-secondary/60 text-muted-foreground hover:text-foreground cursor-pointer">
+              ✕
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div
+              *ngFor="let card of store.practiceCards"
+              class="rounded-2xl border border-glass-border bg-secondary/40 p-3.5">
+              <div class="font-display text-sm font-semibold text-primary">
+                {{ card.name }}
+              </div>
+              <div class="mt-1 text-xs text-muted-foreground">
+                {{ card.hint }}
+              </div>
+            </div>
+          </div>
+
+          <div class="rounded-2xl border border-glass-border bg-secondary/30 p-3.5 text-xs text-muted-foreground space-y-1">
+            <div class="font-semibold text-foreground">Keyboard Shortcuts &amp; Simulation</div>
+            <p>
+              Press <kbd class="rounded bg-secondary px-1.5 py-0.5 font-mono text-foreground">S</kbd> for Settings,
+              <kbd class="rounded bg-secondary px-1.5 py-0.5 font-mono text-foreground">M</kbd> to Mute sound cues, or
+              <kbd class="rounded bg-secondary px-1.5 py-0.5 font-mono text-foreground">C</kbd> for this guide.
+              In Simulation mode, hold <kbd class="rounded bg-secondary px-1.5 py-0.5 font-mono text-foreground">Shift</kbd> while moving the mouse up or down to emulate a V-sign scroll.
+            </p>
+          </div>
+
+          <div class="flex justify-end">
+            <button
+              type="button"
+              (click)="store.toggleGuideModal(false)"
+              class="rounded-xl bg-primary px-5 py-2 text-xs font-semibold text-primary-foreground shadow hover:bg-primary/90 cursor-pointer">
+              Got it
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SETTINGS DRAWER -->
+      <app-settings-panel />
     </div>
   `,
-  styles: [`
-    :host {
-      display: block;
-      min-height: 100vh;
-      color: #f8fafc;
-    }
-    .scepter-app {
-      display: flex;
-      flex-direction: column;
-      height: 100vh;
-      padding: 0.75rem 1rem;
-      gap: 0.75rem;
-      box-sizing: border-box;
-      max-width: 1680px;
-      margin: 0 auto;
-    }
-    .scepter-app.compact-mode {
-      padding: 0.4rem;
-      gap: 0.4rem;
-    }
-    .top-bar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 0.75rem;
-      padding: 0.65rem 1.1rem;
-      border-radius: 14px;
-    }
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 0.75rem;
-    }
-    .crown-emblem {
-      width: 40px;
-      height: 40px;
-      border-radius: 10px;
-      background: radial-gradient(circle at 30% 30%, rgba(245, 185, 66, 0.25), rgba(15, 23, 42, 0.9));
-      border: 1px solid rgba(245, 185, 66, 0.45);
-      display: grid;
-      place-items: center;
-      box-shadow: 0 0 18px rgba(245, 185, 66, 0.22);
-    }
-    .brand-text h1 {
-      margin: 0;
-      font-size: 1.08rem;
-      font-weight: 800;
-      letter-spacing: 0.12em;
-      color: #fff;
-      display: flex;
-      align-items: center;
-      gap: 0.4rem;
-    }
-    .hud-tag {
-      font-size: 0.68rem;
-      padding: 0.1rem 0.42rem;
-      border-radius: 5px;
-      background: rgba(245, 185, 66, 0.18);
-      color: #f5b942;
-      border: 1px solid rgba(245, 185, 66, 0.4);
-      letter-spacing: 0.08em;
-    }
-    .tagline {
-      margin: 0.1rem 0 0;
-      font-size: 0.72rem;
-      color: #94a3b8;
-    }
-    .status-strip {
-      display: flex;
-      align-items: center;
-      gap: 0.55rem;
-      flex-wrap: wrap;
-    }
-    .chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-      padding: 0.32rem 0.7rem;
-      border-radius: 999px;
-      font-size: 0.75rem;
-      background: rgba(15, 23, 42, 0.78);
-      border: 1px solid rgba(148, 163, 184, 0.22);
-      color: #cbd5e1;
-    }
-    .chip .label {
-      color: #64748b;
-      font-size: 0.68rem;
-      font-weight: 600;
-    }
-    .chip .dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #64748b;
-    }
-    .state-chip[data-state='HOVER'] .dot {
-      background: #38bdf8;
-      box-shadow: 0 0 8px #38bdf8;
-    }
-    .state-chip[data-state='GRABBING'],
-    .state-chip[data-state='DRAGGING'] {
-      border-color: rgba(245, 185, 66, 0.65);
-      color: #ffe39f;
-      background: rgba(245, 185, 66, 0.14);
-    }
-    .state-chip[data-state='GRABBING'] .dot,
-    .state-chip[data-state='DRAGGING'] .dot {
-      background: #f5b942;
-      box-shadow: 0 0 10px #f5b942;
-    }
-    .state-chip[data-state='SCROLLING'] {
-      border-color: rgba(134, 239, 172, 0.65);
-      color: #bbf7d0;
-      background: rgba(134, 239, 172, 0.14);
-    }
-    .state-chip[data-state='SCROLLING'] .dot {
-      background: #4ade80;
-      box-shadow: 0 0 10px #4ade80;
-    }
-    .sub-badge {
-      font-size: 0.65rem;
-      padding: 0.05rem 0.35rem;
-      border-radius: 4px;
-      background: rgba(56, 189, 248, 0.15);
-      color: #38bdf8;
-      font-weight: 700;
-    }
-    .sub-badge.sim {
-      background: rgba(245, 185, 66, 0.2);
-      color: #f5b942;
-    }
-    .conn-chip.connected {
-      border-color: rgba(16, 185, 129, 0.4);
-      color: #a7f3d0;
-    }
-    .conn-chip.connected .dot {
-      background: #10b981;
-      box-shadow: 0 0 8px #10b981;
-    }
-    .conn-chip.unreachable {
-      border-color: rgba(244, 63, 94, 0.45);
-      color: #fecdd3;
-    }
-    .conn-chip.unreachable .dot {
-      background: #f43f5e;
-      box-shadow: 0 0 8px #f43f5e;
-    }
-    .header-actions {
-      display: flex;
-      align-items: center;
-      gap: 0.45rem;
-    }
-    .btn-mode, .btn-icon {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.4rem;
-      background: rgba(15, 23, 42, 0.8);
-      color: #e2e8f0;
-      border: 1px solid rgba(148, 163, 184, 0.28);
-      border-radius: 10px;
-      padding: 0.42rem 0.8rem;
-      font-size: 0.76rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.18s ease;
-    }
-    .btn-mode:hover, .btn-icon:hover {
-      border-color: rgba(245, 185, 66, 0.55);
-      color: #ffe39f;
-    }
-    .btn-mode.active, .btn-icon.active {
-      background: linear-gradient(135deg, rgba(245, 185, 66, 0.25), rgba(200, 138, 20, 0.15));
-      border-color: rgba(245, 185, 66, 0.75);
-      color: #ffe6a3;
-      box-shadow: 0 0 16px rgba(245, 185, 66, 0.22);
-    }
-    .workspace {
-      flex: 1;
-      display: grid;
-      grid-template-columns: 1fr 370px;
-      gap: 0.85rem;
-      min-height: 0;
-    }
-    .scepter-app.compact-mode .workspace {
-      grid-template-columns: 1fr;
-    }
-    @media (max-width: 1080px) {
-      .workspace {
-        grid-template-columns: 1fr;
-      }
-    }
-    .viewport-card {
-      position: relative;
-      border-radius: 16px;
-      overflow: hidden;
-      background: radial-gradient(circle at center, #111827 0%, #070a12 100%);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      user-select: none;
-      min-height: 360px;
-      width: 100%;
-      height: 100%;
-    }
-    .viewport-card.pip-floating {
-      border-radius: 0;
-      border: none;
-      width: 100vw;
-      height: 100vh;
-      min-height: 100vh;
-    }
-    .pip-host-slot {
-      display: flex;
-      width: 100%;
-      height: 100%;
-      min-height: 360px;
-    }
-    .pip-active-banner {
-      width: 100%;
-      height: 100%;
-      border-radius: 16px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      padding: 2rem;
-      gap: 0.75rem;
-    }
-    .pip-active-banner h2 {
-      margin: 0;
-      font-size: 1.2rem;
-      color: #ffe6a3;
-    }
-    .pip-active-banner p {
-      margin: 0 0 0.5rem;
-      max-width: 440px;
-      font-size: 0.85rem;
-      color: #94a3b8;
-      line-height: 1.5;
-    }
-    .viewport-card.sim-active {
-      cursor: crosshair;
-      background:
-        radial-gradient(circle at 50% 45%, rgba(245, 185, 66, 0.08), transparent 65%),
-        linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-        #080c16;
-      background-size: 100% 100%, 36px 36px, 36px 36px, 100% 100%;
-    }
-    .webcam-video {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      /* Mirror video visually so it matches our mirrored landmark geometry */
-      transform: scaleX(-1);
-      filter: contrast(1.04) brightness(0.92);
-    }
-    .webcam-video.hidden {
-      display: none;
-    }
-    .sim-backdrop {
-      position: absolute;
-      inset: 0;
-      display: grid;
-      place-items: center;
-      pointer-events: none;
-      padding: 2rem;
-      text-align: center;
-    }
-    .sim-instructions {
-      max-width: 480px;
-      opacity: 0.72;
-    }
-    .pill-gold {
-      display: inline-block;
-      font-size: 0.68rem;
-      font-weight: 700;
-      letter-spacing: 0.1em;
-      color: #f5b942;
-      background: rgba(245, 185, 66, 0.14);
-      border: 1px solid rgba(245, 185, 66, 0.4);
-      padding: 0.2rem 0.65rem;
-      border-radius: 999px;
-      margin-bottom: 0.6rem;
-    }
-    .sim-instructions h2 {
-      font-size: 1.05rem;
-      margin: 0 0 0.4rem;
-      color: #f8fafc;
-    }
-    .sim-instructions p {
-      font-size: 0.78rem;
-      color: #94a3b8;
-      margin: 0;
-    }
-    .camera-status-overlay {
-      position: absolute;
-      inset: 0;
-      background: rgba(7, 10, 18, 0.78);
-      backdrop-filter: blur(8px);
-      display: grid;
-      place-items: center;
-      z-index: 20;
-      padding: 1.5rem;
-    }
-    .status-modal {
-      max-width: 420px;
-      padding: 1.6rem;
-      border-radius: 16px;
-      text-align: center;
-      border: 1px solid rgba(245, 185, 66, 0.35);
-    }
-    .status-modal h3 {
-      margin: 0.6rem 0 0.35rem;
-      font-size: 1.05rem;
-    }
-    .status-modal p {
-      margin: 0 0 1.1rem;
-      font-size: 0.82rem;
-      color: #94a3b8;
-      line-height: 1.45;
-    }
-    .warn-badge {
-      display: inline-block;
-      font-size: 0.7rem;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      padding: 0.2rem 0.6rem;
-      border-radius: 999px;
-      background: rgba(245, 185, 66, 0.18);
-      color: #f5b942;
-    }
-    .modal-actions {
-      display: flex;
-      gap: 0.6rem;
-      justify-content: center;
-      flex-wrap: wrap;
-    }
-    .btn-gold {
-      background: linear-gradient(135deg, #f5b942, #d99b1e);
-      color: #090d16;
-      font-weight: 700;
-      border: none;
-      padding: 0.55rem 1rem;
-      border-radius: 10px;
-      font-size: 0.8rem;
-      cursor: pointer;
-    }
-    .btn-outline {
-      background: rgba(255, 255, 255, 0.06);
-      color: #e2e8f0;
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      padding: 0.55rem 1rem;
-      border-radius: 10px;
-      font-size: 0.8rem;
-      cursor: pointer;
-    }
-    .spinner {
-      width: 34px;
-      height: 34px;
-      border-radius: 50%;
-      border: 3px solid rgba(245, 185, 66, 0.2);
-      border-top-color: #f5b942;
-      animation: spin 0.85s linear infinite;
-      margin: 0 auto;
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
-    .viewport-hud-footer {
-      position: absolute;
-      left: 12px;
-      right: 12px;
-      bottom: 12px;
-      z-index: 15;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 0.75rem;
-      padding: 0.55rem 0.9rem;
-      border-radius: 12px;
-      background: rgba(9, 13, 24, 0.82);
-      backdrop-filter: blur(12px);
-      border: 1px solid rgba(245, 185, 66, 0.24);
-      pointer-events: none;
-    }
-    .telemetry-item {
-      display: flex;
-      align-items: center;
-      gap: 0.45rem;
-      font-size: 0.75rem;
-    }
-    .telemetry-item .k {
-      font-size: 0.66rem;
-      font-weight: 700;
-      color: #64748b;
-      letter-spacing: 0.06em;
-    }
-    .telemetry-item .v {
-      color: #e2e8f0;
-      font-weight: 600;
-      max-width: 320px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .telemetry-item .v.highlight {
-      color: #ffe39f;
-    }
-    .telemetry-item .v.err {
-      color: #fda4af;
-    }
-    .telemetry-item.metrics {
-      font-family: 'JetBrains Mono', 'Consolas', monospace;
-      font-size: 0.72rem;
-      color: #cbd5e1;
-      gap: 0.65rem;
-    }
-    .armed-pill {
-      background: rgba(245, 185, 66, 0.25);
-      color: #ffe6a3;
-      border: 1px solid #f5b942;
-      padding: 0.1rem 0.45rem;
-      border-radius: 6px;
-      font-weight: 700;
-    }
-    .side-column {
-      display: flex;
-      flex-direction: column;
-      gap: 0.85rem;
-      overflow-y: auto;
-      padding-right: 2px;
-    }
-    .quick-deck {
-      padding: 1rem 1.15rem;
-      border-radius: 14px;
-    }
-    .deck-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: baseline;
-      margin-bottom: 0.35rem;
-    }
-    .deck-header h3 {
-      margin: 0;
-      font-size: 0.92rem;
-      color: #f8fafc;
-    }
-    .deck-sub {
-      font-size: 0.68rem;
-      color: #f5b942;
-    }
-    .deck-target {
-      margin: 0 0 0.75rem;
-      font-size: 0.74rem;
-      color: #94a3b8;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .deck-target strong {
-      color: #e2e8f0;
-    }
-    .snap-buttons-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 0.42rem;
-    }
-    .snap-buttons-grid button {
-      background: rgba(15, 23, 42, 0.75);
-      color: #cbd5e1;
-      border: 1px solid rgba(148, 163, 184, 0.22);
-      border-radius: 8px;
-      padding: 0.45rem 0.35rem;
-      font-size: 0.72rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.15s ease;
-    }
-    .snap-buttons-grid button.primary-snap {
-      border-color: rgba(245, 185, 66, 0.4);
-      color: #ffe39f;
-    }
-    .snap-buttons-grid button:hover {
-      background: rgba(245, 185, 66, 0.22);
-      border-color: #f5b942;
-      color: #fff;
-      transform: translateY(-1px);
-    }
-    .cycle-section {
-      margin-top: 0.85rem;
-      padding-top: 0.75rem;
-      border-top: 1px solid rgba(245, 185, 66, 0.16);
-      display: flex;
-      flex-direction: column;
-      gap: 0.55rem;
-    }
-    .cycle-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 0.5rem;
-    }
-    .cycle-title {
-      font-size: 0.74rem;
-      font-weight: 700;
-      color: #cbd5e1;
-      letter-spacing: 0.02em;
-    }
-    .cycle-btn-pair {
-      display: flex;
-      gap: 0.35rem;
-    }
-    .btn-cycle {
-      background: rgba(245, 185, 66, 0.14);
-      color: #ffe39f;
-      border: 1px solid rgba(245, 185, 66, 0.4);
-      border-radius: 7px;
-      padding: 0.28rem 0.6rem;
-      font-size: 0.72rem;
-      font-weight: 700;
-      cursor: pointer;
-      transition: all 0.15s ease;
-    }
-    .btn-cycle:hover {
-      background: rgba(245, 185, 66, 0.28);
-      box-shadow: 0 0 10px rgba(245, 185, 66, 0.25);
-    }
-    .window-stack-list {
-      display: flex;
-      flex-direction: column;
-      gap: 0.3rem;
-      max-height: 135px;
-      overflow-y: auto;
-    }
-    .stack-item {
-      display: grid;
-      grid-template-columns: 26px 1fr auto;
-      align-items: center;
-      gap: 0.4rem;
-      text-align: left;
-      background: rgba(15, 23, 42, 0.55);
-      border: 1px solid rgba(148, 163, 184, 0.16);
-      border-radius: 7px;
-      padding: 0.32rem 0.5rem;
-      font-size: 0.71rem;
-      color: #cbd5e1;
-      cursor: pointer;
-      transition: all 0.14s ease;
-    }
-    .stack-item:hover {
-      border-color: rgba(245, 185, 66, 0.45);
-      color: #fff;
-    }
-    .stack-item.active {
-      background: rgba(245, 185, 66, 0.16);
-      border-color: rgba(245, 185, 66, 0.65);
-      color: #ffe6a3;
-    }
-    .stack-rank {
-      font-family: 'JetBrains Mono', 'Consolas', monospace;
-      font-size: 0.66rem;
-      color: #f5b942;
-      font-weight: 700;
-    }
-    .stack-name {
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      font-weight: 600;
-    }
-    .stack-proc {
-      font-size: 0.64rem;
-      color: #94a3b8;
-      background: rgba(255, 255, 255, 0.05);
-      padding: 0.08rem 0.35rem;
-      border-radius: 4px;
-    }
-  `],
   changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ScepterShellComponent implements AfterViewInit {
@@ -894,168 +874,148 @@ export class ScepterShellComponent implements AfterViewInit {
   @ViewChild('viewportContainer', { static: true }) viewportRef!: ElementRef<HTMLElement>;
   @ViewChild('pipHostSlot', { static: true }) pipHostSlotRef!: ElementRef<HTMLElement>;
 
-  readonly cameraService = inject(CameraService);
-  readonly trackerService = inject(HandTrackerService);
-  readonly gestureEngine = inject(GestureEngineService);
-  readonly apiService = inject(WindowApiService);
-  readonly settingsService = inject(SettingsService);
+  readonly store = inject(WaveViewModelStore);
   private readonly ngZone = inject(NgZone);
   private readonly destroyRef = inject(DestroyRef);
 
-  readonly simulationMode = signal<boolean>(false);
-  readonly compactMode = signal<boolean>(false);
-  readonly showSettings = signal<boolean>(true);
-  readonly isPipActive = signal<boolean>(false);
-  readonly fps = signal<number>(60);
-
-  readonly frame = signal<GestureFrameSnapshot>({
-    state: 'IDLE',
-    cursor: null,
-    rawCursor: null,
-    isPinching: false,
-    normalizedPinchDistance: 1,
-    rawPinchDistance: 1,
-    pinchProgress: 0,
-    hoveredZone: null,
-    armedZone: null,
-    dwellProgress: 0,
-    velocity: 0,
-    handsMirrored: []
-  });
-
-  readonly pipSupported = typeof window !== 'undefined' && 'documentPictureInPicture' in window;
+  readonly pipSupported =
+    typeof window !== 'undefined' && 'documentPictureInPicture' in window;
 
   private simPointer: Point2D | null = null;
   private simMouseDown = false;
   private simShiftDown = false;
   private simRafId: number | null = null;
-  private readonly onKeyDownBound = (e: KeyboardEvent) => {
-    if (e.key === 'Shift') this.simShiftDown = true;
-  };
-  private readonly onKeyUpBound = (e: KeyboardEvent) => {
-    if (e.key === 'Shift') this.simShiftDown = false;
+
+  private readonly onVisibilityChangeBound = () => {
+    if (typeof document !== 'undefined' && document.hidden && this.store.cameraStatus() === 'active') {
+      this.store.setTabHidden(true);
+    }
   };
 
   constructor() {
-    if (typeof window !== 'undefined') {
-      window.addEventListener('keydown', this.onKeyDownBound);
-      window.addEventListener('keyup', this.onKeyUpBound);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', this.onVisibilityChangeBound);
     }
-    // Keep gesture state machine settings synchronized with live sliders
-    effect(() => {
-      const currentSettings = this.settingsService.settings();
-      this.gestureEngine.updateSettings(currentSettings);
-    });
 
     this.destroyRef.onDestroy(() => {
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('keydown', this.onKeyDownBound);
-        window.removeEventListener('keyup', this.onKeyUpBound);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', this.onVisibilityChangeBound);
       }
-      this.stopAllLoops();
+      this.stopSimulationLoop();
+      this.store.stopCamera(this.videoRef?.nativeElement);
     });
   }
 
-  async ngAfterViewInit(): Promise<void> {
-    await this.startWebcamFlow();
+  ngAfterViewInit(): void {
+    // Camera starts in 'idle' showing the "Turn on your camera to start" card matching the reference UI.
   }
 
-  async startWebcamFlow(): Promise<void> {
-    this.stopSimulationLoop();
-    const videoEl = this.videoRef.nativeElement;
+  @HostListener('window:keydown', ['$event'])
+  onWindowKeyDown(event: KeyboardEvent): void {
+    if (event.key === 'Shift') {
+      this.simShiftDown = true;
+    }
 
-    const trackerOk = await this.trackerService.initialize(2);
-    const camOk = await this.cameraService.startCamera(videoEl);
+    const target = event.target as HTMLElement | null;
+    if (
+      target &&
+      (target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.isContentEditable)
+    ) {
+      return;
+    }
 
-    if (trackerOk && camOk) {
-      this.trackerService.startTrackingLoop(videoEl, (trackingFrame) => {
-        const snapshot = this.gestureEngine.processLandmarks(
-          trackingFrame.hands,
-          trackingFrame.timestampMs
-        );
-        this.ngZone.run(() => {
-          this.fps.set(trackingFrame.fps);
-          this.applyGestureSnapshot(snapshot);
-        });
-      });
+    if (event.key === 's' || event.key === 'S') {
+      event.preventDefault();
+      this.store.toggleSettingsDrawer();
+    } else if (event.key === 'm' || event.key === 'M') {
+      event.preventDefault();
+      this.store.toggleMute();
+    } else if (event.key === 'c' || event.key === 'C') {
+      event.preventDefault();
+      this.store.toggleGuideModal();
+    } else if (event.key === 'Escape') {
+      this.store.toggleGuideModal(false);
+      this.store.toggleSettingsDrawer(false);
     }
   }
 
-  async retryWebcam(): Promise<void> {
-    this.simulationMode.set(false);
-    await this.startWebcamFlow();
+  @HostListener('window:keyup', ['$event'])
+  onWindowKeyUp(event: KeyboardEvent): void {
+    if (event.key === 'Shift') {
+      this.simShiftDown = false;
+    }
+  }
+
+  async startCamera(): Promise<void> {
+    this.stopSimulationLoop();
+    await this.store.startCamera(this.videoRef.nativeElement);
+  }
+
+  stopCamera(): void {
+    this.store.stopCamera(this.videoRef.nativeElement);
+  }
+
+  toggleCamera(): void {
+    if (this.store.cameraStatus() === 'active') {
+      this.stopCamera();
+    } else {
+      void this.startCamera();
+    }
   }
 
   enableSimulationMode(): void {
-    if (!this.simulationMode()) {
+    if (!this.store.simulationMode()) {
       this.toggleSimulationMode();
     }
   }
 
   toggleSimulationMode(): void {
-    const next = !this.simulationMode();
-    this.simulationMode.set(next);
-    this.gestureEngine.reset();
-
-    if (next) {
-      this.trackerService.stopTrackingLoop();
-      this.cameraService.stopCamera(this.videoRef.nativeElement);
-      this.startSimulationLoop();
-    } else {
+    if (this.store.simulationMode()) {
       this.stopSimulationLoop();
-      void this.startWebcamFlow();
+      this.store.disableSimulationMode();
+    } else {
+      this.store.enableSimulationMode(this.videoRef.nativeElement);
+      this.startSimulationLoop();
     }
   }
 
   onSimPointerDown(event: PointerEvent): void {
-    if (!this.simulationMode()) return;
+    if (!this.store.simulationMode()) return;
     this.simMouseDown = true;
     this.simShiftDown = event.shiftKey;
     this.updateSimPointerFromEvent(event);
   }
 
   onSimPointerMove(event: PointerEvent): void {
-    if (!this.simulationMode()) return;
+    if (!this.store.simulationMode()) return;
     this.simShiftDown = event.shiftKey;
     this.updateSimPointerFromEvent(event);
   }
 
   onSimPointerUp(event: PointerEvent): void {
-    if (!this.simulationMode()) return;
+    if (!this.store.simulationMode()) return;
     this.simMouseDown = false;
     this.simShiftDown = event.shiftKey;
     this.updateSimPointerFromEvent(event);
   }
 
   onSimPointerLeave(): void {
-    if (!this.simulationMode()) return;
+    if (!this.store.simulationMode()) return;
     this.simMouseDown = false;
     this.simShiftDown = false;
     this.simPointer = null;
-  }
-
-  triggerDirectSnap(position: SnapPosition): void {
-    void this.apiService.snapWindow({
-      position,
-      ratio: this.settingsService.settings().snapRatio
-    });
-  }
-
-  triggerCycle(direction: 'next' | 'prev'): void {
-    void this.apiService.cycleWindow({ direction });
-  }
-
-  selectTargetWindow(handle: number): void {
-    void this.apiService.cycleWindow({ direction: 'next', handle });
   }
 
   async toggleDocumentPiP(): Promise<void> {
     if (!this.pipSupported) return;
 
     try {
-      const pipApi = (window as any).documentPictureInPicture;
+      const pipApi = (window as unknown as { documentPictureInPicture: any })
+        .documentPictureInPicture;
 
-      // If PiP window is already open, close it and dock viewport back
       if (pipApi.window) {
         pipApi.window.close();
         return;
@@ -1066,13 +1026,12 @@ export class ScepterShellComponent implements AfterViewInit {
         height: 340
       });
 
-      // Set exact title "WAVEHUD" so the Win32 backend ignores the floating PiP window too
+      // Keep exact title "WAVEHUD" so the Win32 backend ignores the PiP window too
       pipWindow.document.title = 'WAVEHUD';
       pipWindow.document.body.style.margin = '0';
       pipWindow.document.body.style.background = '#060911';
       pipWindow.document.body.style.overflow = 'hidden';
 
-      // Copy all stylesheets (including Angular component styles) into the PiP document
       for (const sheet of Array.from(document.styleSheets)) {
         try {
           if (sheet.href) {
@@ -1092,30 +1051,26 @@ export class ScepterShellComponent implements AfterViewInit {
         }
       }
 
-      // Move the live viewport element into the Always-on-Top PiP window
       const viewportEl = this.viewportRef.nativeElement;
       pipWindow.document.body.appendChild(viewportEl);
-      this.isPipActive.set(true);
+      this.store.isPipActive.set(true);
 
-      // Ensure video keeps playing smoothly after DOM reparenting
       const videoEl = this.videoRef.nativeElement;
-      if (!this.simulationMode() && videoEl.paused && videoEl.srcObject) {
+      if (!this.store.simulationMode() && videoEl.paused && videoEl.srcObject) {
         void videoEl.play().catch(() => {});
       }
 
-      // Restore viewport back into the main Angular tab when PiP closes
       pipWindow.addEventListener('pagehide', () => {
         this.ngZone.run(() => {
           this.pipHostSlotRef.nativeElement.appendChild(viewportEl);
-          this.isPipActive.set(false);
-          if (!this.simulationMode() && videoEl.paused && videoEl.srcObject) {
+          this.store.isPipActive.set(false);
+          if (!this.store.simulationMode() && videoEl.paused && videoEl.srcObject) {
             void videoEl.play().catch(() => {});
           }
         });
       });
-    } catch (err) {
-      console.warn('Document Picture-in-Picture failed, falling back to compact mode:', err);
-      this.compactMode.set(true);
+    } catch {
+      this.store.toggleCompactMode(true);
     }
   }
 
@@ -1130,21 +1085,18 @@ export class ScepterShellComponent implements AfterViewInit {
 
   private startSimulationLoop(): void {
     this.stopSimulationLoop();
-    this.fps.set(60);
 
     this.ngZone.runOutsideAngular(() => {
       const tick = (nowMs: number) => {
-        if (!this.simulationMode()) return;
-
-        const snapshot = this.gestureEngine.processPointerSimulation(
-          this.simPointer,
-          this.simMouseDown,
-          nowMs,
-          this.simShiftDown
-        );
+        if (!this.store.simulationMode()) return;
 
         this.ngZone.run(() => {
-          this.applyGestureSnapshot(snapshot);
+          this.store.processSimulationStep(
+            this.simPointer,
+            this.simMouseDown,
+            nowMs,
+            this.simShiftDown
+          );
         });
 
         this.simRafId = requestAnimationFrame(tick);
@@ -1160,54 +1112,4 @@ export class ScepterShellComponent implements AfterViewInit {
       this.simRafId = null;
     }
   }
-
-  private stopAllLoops(): void {
-    this.stopSimulationLoop();
-    this.trackerService.stopTrackingLoop();
-    this.cameraService.stopCamera(this.videoRef?.nativeElement);
-  }
-
-  private applyGestureSnapshot(snapshot: GestureFrameSnapshot): void {
-    this.frame.set(snapshot);
-
-    if (snapshot.grabIssued) {
-      void this.apiService.grabWindow({
-        x: snapshot.grabIssued.x,
-        y: snapshot.grabIssued.y
-      });
-    }
-
-    if (snapshot.moveIssued) {
-      void this.apiService.moveWindow({
-        x: snapshot.moveIssued.x,
-        y: snapshot.moveIssued.y,
-        deltaX: snapshot.moveIssued.deltaX,
-        deltaY: snapshot.moveIssued.deltaY
-      });
-    }
-
-    if (snapshot.snapIssued) {
-      void this.apiService.snapWindow({
-        position: snapshot.snapIssued.position,
-        ratio: snapshot.snapIssued.ratio
-      });
-    }
-
-    if (snapshot.resizeIssued) {
-      void this.apiService.resizeWindow({
-        scaleFactor: snapshot.resizeIssued.scaleFactor
-      });
-    }
-
-    if (snapshot.cycleIssued) {
-      void this.apiService.cycleWindow({
-        direction: snapshot.cycleIssued.direction
-      });
-    }
-
-    if (snapshot.scrollIssued) {
-      void this.apiService.scrollInput(snapshot.scrollIssued);
-    }
-  }
 }
-
