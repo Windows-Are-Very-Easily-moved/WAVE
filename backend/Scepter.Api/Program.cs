@@ -26,9 +26,9 @@ builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new()
     {
-        Title = "Scepter Spatial Window Manager API",
+        Title = "W.A.V.E Spatial Window Manager API",
         Version = "v1",
-        Description = "Win32 P/Invoke window grab & snap engine for Scepter HUD."
+        Description = "Win32 P/Invoke window grab, snap & scroll engine for W.A.V.E (WAVEHUD)."
     });
 });
 

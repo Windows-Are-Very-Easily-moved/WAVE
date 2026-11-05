@@ -1,9 +1,9 @@
-# Scepter 👑
+# W.A.V.E 🌊
 
-> **"Rule your desktop with a wave."**
+> **"Windows Are Very Easily-moved"**
 > Touchless, spatial window manager for Windows — built for **Crown Hacks**.
 
-Scepter turns your laptop webcam into a local, zero-latency spatial controller for native Windows desktop apps. Pinch in mid-air to grab the window under your hand, drag toward a screen edge or corner to preview the landing zone, and release to snap real OS windows (Notepad, Chrome, VS Code, Explorer) flush into place.
+W.A.V.E turns your laptop webcam into a local, zero-latency spatial controller for native Windows desktop apps. Pinch in mid-air to grab the window under your hand, drag toward a screen edge or corner to preview the landing zone, and release to snap real OS windows (Notepad, Chrome, VS Code, Explorer) flush into place.
 
 - **100% Local Vision:** Powered by `@mediapipe/tasks-vision` (`HandLandmarker` in `VIDEO` mode with GPU delegate + CPU fallback) bundled offline in `frontend/src/assets/mediapipe/`. Zero video frames ever leave the browser.
 - **Native Win32 Precision:** ASP.NET Core Web API backend (`user32.dll`, `dwmapi.dll`, `shcore.dll`) with per-monitor DPI awareness (`PER_MONITOR_AWARE_V2`), work-area awareness (`rcWork` so the taskbar is never covered), and DWM Extended Frame Bounds compensation (`DWMWA_EXTENDED_FRAME_BOUNDS`) so snapped windows sit flush with zero invisible-border gaps.
@@ -21,7 +21,7 @@ scepter/
 ├── .gitignore             # Root gitignore for .NET and Angular/Node artifacts
 ├── frontend/              # Angular 18 standalone app (http://localhost:4200)
 │   ├── src/
-│   │   ├── index.html     # <title>Scepter HUD</title> (used by backend to ignore self)
+│   │   ├── index.html     # <title>WAVEHUD</title> (used by backend to ignore self)
 │   │   ├── assets/mediapipe/ # Local offline hand_landmarker.task + WASM binaries
 │   │   └── app/
 │   │       ├── core/
@@ -139,7 +139,7 @@ All parameters can be tuned live in the **Spatial Calibration** sidebar and pers
 ## 60-Second Judge Demo Script
 
 1. **0:00 – 0:10 | Launch & Target Lock:**
-   Open **Notepad** (or VS Code) alongside the **Scepter HUD** browser window (`http://localhost:4200`). Point out the green **Win32 API Ready** indicator, the live **60 FPS GPU** badge, and the **TARGET WINDOW** footer automatically tracking Notepad while ignoring `"Scepter HUD"`.
+   Open **Notepad** (or VS Code) alongside the **W.A.V.E** browser window (`http://localhost:4200`). Point out the green **Win32 API Ready** indicator, the live **60 FPS GPU** badge, and the **TARGET WINDOW** footer automatically tracking Notepad while ignoring `"WAVEHUD"`.
 2. **0:10 – 0:25 | Spatial Pinch & Left/Right Half Snap:**
    Raise one hand in front of the webcam. Show the 21-landmark gold skeleton and the tightening pinch ring. Pinch thumb and index finger together (**STATE: GRABBING**), drag into the left edge zone until it pulses (**ARMED: LEFT** with the ghost preview rectangle), and release — Notepad snaps flush to the left half of the monitor without covering the taskbar or leaving DWM border gaps.
 3. **0:25 – 0:40 | Top Maximize & 4-Corner Quarter Snap:**
@@ -152,8 +152,8 @@ All parameters can be tuned live in the **Spatial Calibration** sidebar and pers
 ## Known Limitations
 
 1. **Windows 10/11 Only:** Native window positioning relies on Win32 `user32.dll`, `dwmapi.dll`, and `shcore.dll`.
-2. **Browser Tab Must Stay Visible:** Browsers throttle `requestAnimationFrame` and webcam streams in backgrounded/minimized tabs. Use the **Compact** button (or **PiP Float** where supported) to park Scepter HUD cleanly in a corner of your screen.
-3. **Do Not Rename `"Scepter HUD"`:** The `<title>Scepter HUD</title>` in `frontend/src/index.html` matches `Scepter:SelfWindowTitleMatch` in `backend/Scepter.Api/appsettings.json` so Scepter never grabs or snaps its own browser window.
+2. **Browser Tab Must Stay Visible:** Browsers throttle `requestAnimationFrame` and webcam streams in backgrounded/minimized tabs. Use the **Compact** button (or **PiP Float** where supported) to park W.A.V.E cleanly in a corner of your screen.
+3. **Do Not Rename `"WAVEHUD"`:** The `<title>WAVEHUD</title>` in `frontend/src/index.html` matches `Scepter:SelfWindowTitleMatch` in `backend/Scepter.Api/appsettings.json` so W.A.V.E never grabs or snaps its own browser window.
 4. **Elevated (Admin) Windows:** Because UIPI (User Interface Privilege Isolation) prevents a standard-privilege process from moving an Administrator window (e.g., an elevated Task Manager or admin terminal), run `dotnet run` in an elevated shell if you want to snap Administrator windows.
 5. **Lighting:** Standard indoor lighting works best for webcam tracking; in dark rooms or environments without a camera, use **Simulation Mode (Mouse)**.
 

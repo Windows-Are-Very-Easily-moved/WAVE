@@ -48,8 +48,8 @@ import { SettingsPanelComponent } from '../settings-panel/settings-panel.compone
             </svg>
           </div>
           <div class="brand-text">
-            <h1>SCEPTER <span class="hud-tag">HUD</span></h1>
-            <p class="tagline">Rule your desktop with a wave.</p>
+            <h1>W.A.V.E <span class="hud-tag">HUD</span></h1>
+            <p class="tagline">Windows Are Very Easily-moved</p>
           </div>
         </div>
 
@@ -1028,8 +1028,8 @@ export class ScepterShellComponent implements AfterViewInit {
         height: 340
       });
 
-      // Set exact title "Scepter HUD" so the Win32 backend ignores the floating PiP window too
-      pipWindow.document.title = 'Scepter HUD';
+      // Set exact title "WAVEHUD" so the Win32 backend ignores the floating PiP window too
+      pipWindow.document.title = 'WAVEHUD';
       pipWindow.document.body.style.margin = '0';
       pipWindow.document.body.style.background = '#060911';
       pipWindow.document.body.style.overflow = 'hidden';

@@ -28,7 +28,7 @@ public sealed class ForegroundTracker : BackgroundService
     public ForegroundTracker(IConfiguration configuration, ILogger<ForegroundTracker> logger)
     {
         _logger = logger;
-        _selfTitleMatch = configuration["Scepter:SelfWindowTitleMatch"] ?? "Scepter HUD";
+        _selfTitleMatch = configuration["Scepter:SelfWindowTitleMatch"] ?? "WAVEHUD";
         _capacity = configuration.GetValue("Scepter:HistoryCapacity", 10);
     }
 
