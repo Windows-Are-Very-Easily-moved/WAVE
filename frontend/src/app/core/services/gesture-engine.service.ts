@@ -19,11 +19,12 @@ import {
   clampScrollDelta,
   computeScrollDeltaStep,
   computeVSignCursor,
-  isVSign
+  isVSign,
+  isVSignMaintained
 } from '../utils/pose';
 
-/** Minimum interval (~30 requests/sec) between batched scroll delta requests. */
-const SCROLL_BATCH_INTERVAL_MS = 33;
+/** Minimum interval (~30-40 requests/sec, below 33.3ms 30fps frame boundary to prevent beat-frequency skipping) between batched scroll delta requests. */
+const SCROLL_BATCH_INTERVAL_MS = 25;
 
 /**
  * Explicit, pure, unit-testable state machine for spatial hand gestures:
@@ -65,6 +66,7 @@ export class GestureStateMachine {
   private vSignEnteredAtMs: number | null = null;
   private vSignLostAtMs: number | null = null;
   private prevScrollSmoothedY: number | null = null;
+  private scrollStrokeAnchorY: number | null = null;
   private scrollRemainder = 0;
   private accumulatedScrollDelta = 0;
   private latchedScrollDelta = 0;
@@ -122,6 +124,7 @@ export class GestureStateMachine {
     this.vSignEnteredAtMs = null;
     this.vSignLostAtMs = null;
     this.prevScrollSmoothedY = null;
+    this.scrollStrokeAnchorY = null;
     this.scrollRemainder = 0;
     this.accumulatedScrollDelta = 0;
     this.latchedScrollDelta = 0;
@@ -147,7 +150,9 @@ export class GestureStateMachine {
 
     const vSignDetected =
       this.settings.scrollEnabled &&
-      isVSign(primaryHand, { vSpreadMin: this.settings.vSpreadMin });
+      (this.state === 'SCROLLING'
+        ? isVSignMaintained(primaryHand, { vSpreadMin: this.settings.vSpreadMin })
+        : isVSign(primaryHand, { vSpreadMin: this.settings.vSpreadMin }));
     const rawScrollCursor = computeVSignCursor(primaryHand);
 
     // Optional stretch goal: two-hand simultaneous pinch resize
@@ -442,6 +447,9 @@ export class GestureStateMachine {
                 ? smoothedScrollCursor.y - this.prevScrollSmoothedY
                 : 0;
             this.prevScrollSmoothedY = smoothedScrollCursor.y;
+            if (this.scrollStrokeAnchorY === null) {
+              this.scrollStrokeAnchorY = smoothedScrollCursor.y;
+            }
 
             const step = computeScrollDeltaStep({
               dy,
@@ -452,30 +460,52 @@ export class GestureStateMachine {
             });
 
             this.scrollRemainder = step.remainder;
-            this.accumulatedScrollDelta += step.delta;
 
-            // Update latched continuous scroll velocity when the hand moves meaningfully:
-            // - Moving in the same direction latches the peak stroke speed so decelerating to a stop never slows down scrolling.
-            // - Moving intentionally in the opposite direction switches the latched scroll direction.
+            // Anchor-based continuous scroll latching:
+            // - Once the hand moves up or down, latch that scroll velocity and track the stroke peak/trough (`scrollStrokeAnchorY`).
+            // - Ignore small settling bounces or hand tremor in the opposite direction (< 4.5% of frame height from the peak/trough)
+            //   so stopping the hand inside the camera frame never interrupts, slows down, or reverses the scroll.
             if (step.delta !== 0) {
               const sign = Math.sign(step.delta);
-              const minSustained = sign * Math.max(45, Math.abs(step.delta));
-              if (this.latchedScrollDelta === 0 || Math.sign(this.latchedScrollDelta) === sign) {
-                if (Math.abs(minSustained) >= Math.abs(this.latchedScrollDelta)) {
-                  this.latchedScrollDelta = clampScrollDelta(minSustained);
+              const sustainedMagnitude = Math.max(60, Math.min(220, Math.abs(step.delta)));
+              const candidateLatch = clampScrollDelta(sign * sustainedMagnitude);
+
+              if (this.latchedScrollDelta === 0) {
+                const travelFromStart = Math.abs(smoothedScrollCursor.y - this.scrollStrokeAnchorY);
+                if (travelFromStart >= 0.006 || Math.abs(dy) >= this.settings.scrollDeadzone * 2) {
+                  this.latchedScrollDelta = candidateLatch;
+                  this.scrollStrokeAnchorY = smoothedScrollCursor.y;
+                  this.accumulatedScrollDelta += step.delta;
                 }
-              } else if (Math.abs(dy) >= this.settings.scrollDeadzone * 2.5) {
-                this.latchedScrollDelta = clampScrollDelta(minSustained);
-                this.accumulatedScrollDelta = step.delta;
+              } else if (Math.sign(this.latchedScrollDelta) === sign) {
+                // Continuing in the same scroll direction: advance extremity anchor and keep the stronger sustained speed
+                if (dy < 0) {
+                  this.scrollStrokeAnchorY = Math.min(this.scrollStrokeAnchorY, smoothedScrollCursor.y);
+                } else if (dy > 0) {
+                  this.scrollStrokeAnchorY = Math.max(this.scrollStrokeAnchorY, smoothedScrollCursor.y);
+                }
+                if (Math.abs(candidateLatch) >= Math.abs(this.latchedScrollDelta)) {
+                  this.latchedScrollDelta = candidateLatch;
+                }
+                this.accumulatedScrollDelta += step.delta;
+              } else {
+                // Opposite movement detected: only switch scroll direction if the hand moved deliberately
+                // at least 4.5% of frame height away from the stroke extremity anchor.
+                const reverseTravel = Math.abs(smoothedScrollCursor.y - this.scrollStrokeAnchorY);
+                if (reverseTravel >= 0.045 && Math.abs(dy) >= this.settings.scrollDeadzone * 2) {
+                  this.latchedScrollDelta = candidateLatch;
+                  this.scrollStrokeAnchorY = smoothedScrollCursor.y;
+                  this.accumulatedScrollDelta = step.delta;
+                }
               }
             }
 
             if (timestampMs - this.lastScrollDeltaEmitTimestampMs >= SCROLL_BATCH_INTERVAL_MS) {
               let rawToEmit = this.accumulatedScrollDelta;
 
-              // While the V-sign remains visible, keep scrolling at the latched velocity
-              // even when the hand stops moving or decelerates inside the camera frame.
-              if (vSignDetected && this.latchedScrollDelta !== 0) {
+              // While in SCROLLING state, keep scrolling steadily at the latched velocity
+              // even when the hand stops moving or if MediaPipe landmarks jitter for a frame.
+              if (this.latchedScrollDelta !== 0) {
                 if (
                   rawToEmit === 0 ||
                   (Math.sign(rawToEmit) === Math.sign(this.latchedScrollDelta) &&
@@ -512,6 +542,7 @@ export class GestureStateMachine {
               activeCursor = smoothedScrollCursor;
               activeRawCursor = rawScrollCursor;
               this.prevScrollSmoothedY = smoothedScrollCursor.y;
+              this.scrollStrokeAnchorY = smoothedScrollCursor.y;
               this.scrollRemainder = 0;
               this.accumulatedScrollDelta = 0;
               this.latchedScrollDelta = 0;

@@ -51,7 +51,7 @@ export const DEFAULT_SETTINGS: ScepterSettings = {
   throwVelocityThreshold: 2.35, // Normalized screen units per second
   enableCorners: true,
   enableThrowGesture: true,
-  enableTwoHandResize: true,
+  enableTwoHandResize: false,
   enableWaveCycleGesture: true,
   enableLiveDrag: true,
   snapRatio: 0.5,

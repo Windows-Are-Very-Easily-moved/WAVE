@@ -304,6 +304,11 @@ export class WindowApiService {
       return null;
     } finally {
       this.scrollInFlight = false;
+      if (this.pendingScrollDelta !== 0 && this.liveControl()) {
+        const nextDelta = this.pendingScrollDelta;
+        this.pendingScrollDelta = 0;
+        void this.scrollInput({ delta: nextDelta });
+      }
     }
   }
 }

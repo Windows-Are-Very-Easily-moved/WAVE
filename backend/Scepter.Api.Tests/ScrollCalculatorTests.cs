@@ -89,3 +89,4 @@ public class ScrollCalculatorTests
         Assert.Equal(expectedSize, actualSize);
     }
 }
+

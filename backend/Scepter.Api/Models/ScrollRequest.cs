@@ -17,3 +17,4 @@ public sealed record ScrollRequest(
 public sealed record ScrollResponse(
     bool Success
 );
+

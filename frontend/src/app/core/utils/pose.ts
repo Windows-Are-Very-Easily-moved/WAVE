@@ -95,6 +95,44 @@ export function isVSign(landmarks: HandLandmarks, config: VSignConfig = {}): boo
 }
 
 /**
+ * Hysteresis companion to `isVSign` used once the state machine is ALREADY in `SCROLLING`.
+ * Uses slightly relaxed extension, curl, and spread thresholds so natural hand tilt or
+ * perspective foreshortening near the top/bottom of the camera frame does not cause
+ * the scroll state to drop out and stutter.
+ */
+export function isVSignMaintained(landmarks: HandLandmarks, config: VSignConfig = {}): boolean {
+  if (!landmarks || landmarks.length < 21) {
+    return false;
+  }
+
+  const vSpreadMin = (config.vSpreadMin ?? 0.35) * 0.65;
+
+  const indexExtended = isFingerExtended(landmarks, INDEX_TIP_LANDMARK, INDEX_PIP_LANDMARK, 1.07);
+  const middleExtended = isFingerExtended(landmarks, MIDDLE_TIP_LANDMARK, MIDDLE_PIP_LANDMARK, 1.07);
+  if (!indexExtended || !middleExtended) {
+    return false;
+  }
+
+  // Allow slightly more foreshortening on curled ring/pinky fingers when hand is tilted at top/bottom of frame
+  const ringExtended = isFingerExtended(landmarks, RING_TIP_LANDMARK, RING_PIP_LANDMARK, 1.26);
+  const pinkyExtended = isFingerExtended(landmarks, PINKY_TIP_LANDMARK, PINKY_PIP_LANDMARK, 1.26);
+  if (ringExtended || pinkyExtended) {
+    return false;
+  }
+
+  const wrist = landmarks[WRIST_LANDMARK];
+  const middleMcp = landmarks[MIDDLE_MCP_LANDMARK];
+  const indexTip = landmarks[INDEX_TIP_LANDMARK];
+  const middleTip = landmarks[MIDDLE_TIP_LANDMARK];
+
+  const handScale = Math.max(euclideanDistance2D(wrist, middleMcp), 0.05);
+  const tipSpread = euclideanDistance2D(indexTip, middleTip);
+  const normalizedSpread = tipSpread / handScale;
+
+  return normalizedSpread > vSpreadMin;
+}
+
+/**
  * Computes the reference cursor point for V-sign scrolling:
  * the midpoint of index fingertip (#8) and middle fingertip (#12) on already-mirrored landmarks,
  * clamped to [0..1].

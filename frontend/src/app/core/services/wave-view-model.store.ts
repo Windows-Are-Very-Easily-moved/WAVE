@@ -238,6 +238,8 @@ export class WaveViewModelStore {
   private lastState: GestureState = 'IDLE';
   private lastArmedZone: SnapPosition | null = null;
   private lastUiSyncMs = -Infinity;
+  private scrollCoastTimer: ReturnType<typeof setInterval> | null = null;
+  private lastScrollDispatchedAtMs = -Infinity;
 
   constructor() {
     this.gestureEngine.updateSettings(this.settingsService.settings());
@@ -369,6 +371,7 @@ export class WaveViewModelStore {
     const camOk = await this.cameraService.startCamera(videoElement);
 
     if (trackerOk && camOk) {
+      this.startScrollCoastLoop();
       this.trackerService.startTrackingLoop(videoElement, (trackingFrame) => {
         const snapshot = this.gestureEngine.processLandmarks(
           trackingFrame.hands,
@@ -389,6 +392,7 @@ export class WaveViewModelStore {
   }
 
   stopCamera(videoElement?: HTMLVideoElement): void {
+    this.stopScrollCoastLoop();
     this.trackerService.stopTrackingLoop();
     this.cameraService.stopCamera(videoElement);
     this.gestureEngine.reset();
@@ -406,16 +410,44 @@ export class WaveViewModelStore {
     this.simulationMode.set(true);
     this.fps.set(60);
     this.trackingConfidence.set(0);
+    this.startScrollCoastLoop();
     this.announce('Mouse simulation mode enabled');
   }
 
   disableSimulationMode(): void {
+    this.stopScrollCoastLoop();
     this.simulationMode.set(false);
     this.gestureEngine.reset();
     this.latestFrame = INITIAL_FRAME;
     this.frame.set(INITIAL_FRAME);
     this.fps.set(0);
     this.trackingConfidence.set(0);
+  }
+
+  private startScrollCoastLoop(): void {
+    this.stopScrollCoastLoop();
+    if (typeof window === 'undefined') return;
+    this.ngZone.runOutsideAngular(() => {
+      this.scrollCoastTimer = setInterval(() => {
+        const snap = this.latestFrame;
+        if (snap.state !== 'SCROLLING') return;
+        const delta = snap.scrollDelta ?? 0;
+        if (delta === 0) return;
+
+        const now = performance.now();
+        if (now - this.lastScrollDispatchedAtMs >= 28) {
+          this.lastScrollDispatchedAtMs = now;
+          void this.apiService.scrollInput({ delta });
+        }
+      }, 30);
+    });
+  }
+
+  private stopScrollCoastLoop(): void {
+    if (this.scrollCoastTimer !== null) {
+      clearInterval(this.scrollCoastTimer);
+      this.scrollCoastTimer = null;
+    }
   }
 
   processSimulationStep(
@@ -474,6 +506,7 @@ export class WaveViewModelStore {
         });
       }
       if (snapshot.scrollIssued && !snapshot.scrollIssued.begin) {
+        this.lastScrollDispatchedAtMs = performance.now();
         void this.apiService.scrollInput(snapshot.scrollIssued);
       }
     }
@@ -594,6 +627,7 @@ export class WaveViewModelStore {
       if (snapshot.scrollIssued.begin) {
         this.recordAction('V-Sign scroll started', 'Cursor aligned to hand');
       } else if (snapshot.scrollIssued.delta !== 0) {
+        this.lastScrollDispatchedAtMs = performance.now();
         const dir = snapshot.scrollIssued.delta > 0 ? 'up' : 'down';
         this.lastActionText.set(`Scroll ${dir} (${snapshot.scrollIssued.delta > 0 ? '+' : ''}${snapshot.scrollIssued.delta})`);
       }

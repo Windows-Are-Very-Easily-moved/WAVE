@@ -169,3 +169,4 @@ Injects vertical mouse wheel scroll events via Win32 `SendInput` (`MOUSEEVENTF_W
   "message": "A valid integer 'delta' is required."
 }
 ```
+

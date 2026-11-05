@@ -237,12 +237,18 @@ describe('GestureStateMachine & Geometry', () => {
     expect(snap.state).toBe('SCROLLING');
     expect(snap.scrollIssued?.delta).toBe(100);
 
+    // 3c. Slight hand-settling rebound downward (y = 0.475 -> 0.488, bounce = +0.013 < 0.045 reversal threshold)
+    // does NOT stop or reverse the upward latched scroll!
+    snap = sm.processLandmarks([createSyntheticVSignHand({ x: 0.5, y: 0.488 })], 335);
+    expect(snap.state).toBe('SCROLLING');
+    expect(snap.scrollIssued?.delta).toBeGreaterThan(0);
+
     // 4. Lose V-sign briefly for 80ms (< 150ms scrollExitMs) -> stays in SCROLLING
-    snap = sm.processLandmarks([createSyntheticHand({ x: 0.5, y: 0.475 }, 0.14)], 345);
+    snap = sm.processLandmarks([createSyntheticHand({ x: 0.5, y: 0.488 }, 0.14)], 375);
     expect(snap.state).toBe('SCROLLING');
 
     // 5. V-sign lost for 160ms total (>= 150ms scrollExitMs) -> exits SCROLLING to HOVER
-    snap = sm.processLandmarks([createSyntheticHand({ x: 0.5, y: 0.475 }, 0.14)], 505);
+    snap = sm.processLandmarks([createSyntheticHand({ x: 0.5, y: 0.488 }, 0.14)], 535);
     expect(snap.state).toBe('HOVER');
   });
 
