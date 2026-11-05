@@ -67,6 +67,7 @@ export class GestureStateMachine {
   private prevScrollSmoothedY: number | null = null;
   private scrollRemainder = 0;
   private accumulatedScrollDelta = 0;
+  private latchedScrollDelta = 0;
   private lastScrollDeltaEmitTimestampMs = -Infinity;
   private lastVisualScrollDelta = 0;
 
@@ -123,6 +124,7 @@ export class GestureStateMachine {
     this.prevScrollSmoothedY = null;
     this.scrollRemainder = 0;
     this.accumulatedScrollDelta = 0;
+    this.latchedScrollDelta = 0;
     this.lastScrollDeltaEmitTimestampMs = -Infinity;
     this.lastVisualScrollDelta = 0;
     this.scrollLerpFilter?.reset();
@@ -451,17 +453,39 @@ export class GestureStateMachine {
 
             this.scrollRemainder = step.remainder;
             this.accumulatedScrollDelta += step.delta;
+
+            // Update latched continuous scroll velocity when the hand moves meaningfully:
+            // - Moving in the same direction latches the peak stroke speed so decelerating to a stop never slows down scrolling.
+            // - Moving intentionally in the opposite direction switches the latched scroll direction.
             if (step.delta !== 0) {
-              this.lastVisualScrollDelta = step.delta;
-            } else if (Math.abs(dy) < this.settings.scrollDeadzone) {
-              this.lastVisualScrollDelta = Math.trunc(this.lastVisualScrollDelta * 0.7);
+              const sign = Math.sign(step.delta);
+              const minSustained = sign * Math.max(45, Math.abs(step.delta));
+              if (this.latchedScrollDelta === 0 || Math.sign(this.latchedScrollDelta) === sign) {
+                if (Math.abs(minSustained) >= Math.abs(this.latchedScrollDelta)) {
+                  this.latchedScrollDelta = clampScrollDelta(minSustained);
+                }
+              } else if (Math.abs(dy) >= this.settings.scrollDeadzone * 2.5) {
+                this.latchedScrollDelta = clampScrollDelta(minSustained);
+                this.accumulatedScrollDelta = step.delta;
+              }
             }
 
-            if (
-              this.accumulatedScrollDelta !== 0 &&
-              timestampMs - this.lastScrollDeltaEmitTimestampMs >= SCROLL_BATCH_INTERVAL_MS
-            ) {
-              const clamped = clampScrollDelta(this.accumulatedScrollDelta);
+            if (timestampMs - this.lastScrollDeltaEmitTimestampMs >= SCROLL_BATCH_INTERVAL_MS) {
+              let rawToEmit = this.accumulatedScrollDelta;
+
+              // While the V-sign remains visible, keep scrolling at the latched velocity
+              // even when the hand stops moving or decelerates inside the camera frame.
+              if (vSignDetected && this.latchedScrollDelta !== 0) {
+                if (
+                  rawToEmit === 0 ||
+                  (Math.sign(rawToEmit) === Math.sign(this.latchedScrollDelta) &&
+                    Math.abs(rawToEmit) < Math.abs(this.latchedScrollDelta))
+                ) {
+                  rawToEmit = this.latchedScrollDelta;
+                }
+              }
+
+              const clamped = clampScrollDelta(rawToEmit);
               if (clamped !== 0) {
                 scrollIssued = { delta: clamped };
                 this.lastVisualScrollDelta = clamped;
@@ -490,6 +514,7 @@ export class GestureStateMachine {
               this.prevScrollSmoothedY = smoothedScrollCursor.y;
               this.scrollRemainder = 0;
               this.accumulatedScrollDelta = 0;
+              this.latchedScrollDelta = 0;
               this.lastScrollDeltaEmitTimestampMs = -Infinity;
               this.lastVisualScrollDelta = 0;
               this.hoveredZone = null;

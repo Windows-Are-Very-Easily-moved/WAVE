@@ -1,5 +1,5 @@
 import { HttpClient } from '@angular/common/http';
-import { DestroyRef, Injectable, inject, signal } from '@angular/core';
+import { DestroyRef, Injectable, NgZone, inject, signal } from '@angular/core';
 import { catchError, firstValueFrom, of, timeout } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import {
@@ -20,6 +20,7 @@ export type BackendConnectionState = 'checking' | 'connected' | 'unreachable';
 export class WindowApiService {
   private readonly http = inject(HttpClient);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly ngZone = inject(NgZone, { optional: true });
 
   readonly connectionState = signal<BackendConnectionState>('checking');
   readonly activeWindow = signal<ActiveWindowInfo | null>(null);
@@ -34,6 +35,9 @@ export class WindowApiService {
   readonly liveControl = signal<boolean>(false);
 
   private pollHandle: ReturnType<typeof setInterval> | null = null;
+  private moveInFlight = false;
+  private scrollInFlight = false;
+  private pendingScrollDelta = 0;
 
   constructor() {
     this.startHealthPolling();
@@ -50,10 +54,17 @@ export class WindowApiService {
 
   startHealthPolling(): void {
     this.stopHealthPolling();
-    void this.checkHealthAndActiveWindow();
-    this.pollHandle = setInterval(() => {
+    const startLoop = () => {
       void this.checkHealthAndActiveWindow();
-    }, 2500);
+      this.pollHandle = setInterval(() => {
+        void this.checkHealthAndActiveWindow();
+      }, 3000);
+    };
+    if (this.ngZone) {
+      this.ngZone.runOutsideAngular(startLoop);
+    } else {
+      startLoop();
+    }
   }
 
   stopHealthPolling(): void {
@@ -67,36 +78,42 @@ export class WindowApiService {
     try {
       const res = await firstValueFrom(
         this.http.get<{ status: string }>(environment.healthUrl).pipe(
-          timeout(4000),
+          timeout(3000),
           catchError(() => of(null))
         )
       );
 
       if (res && res.status === 'ok') {
-        this.connectionState.set('connected');
+        if (this.connectionState() !== 'connected') {
+          this.runInZone(() => this.connectionState.set('connected'));
+        }
         const active = await firstValueFrom(
           this.http.get<ActiveWindowInfo>(`${environment.apiBaseUrl}/active`).pipe(
-            timeout(3000),
+            timeout(2500),
             catchError(() => of(null))
           )
         );
         if (active) {
-          this.activeWindow.set(active);
+          const prev = this.activeWindow();
+          if (!prev || prev.handle !== active.handle || prev.title !== active.title) {
+            this.runInZone(() => this.activeWindow.set(active));
+          }
         }
-        const list = await firstValueFrom(
-          this.http.get<ActiveWindowInfo[]>(`${environment.apiBaseUrl}/list`).pipe(
-            timeout(3000),
-            catchError(() => of(null))
-          )
-        );
-        if (list) {
-          this.recentWindows.set(list);
-        }
-      } else {
-        this.connectionState.set('unreachable');
+      } else if (this.connectionState() !== 'unreachable') {
+        this.runInZone(() => this.connectionState.set('unreachable'));
       }
     } catch {
-      this.connectionState.set('unreachable');
+      if (this.connectionState() !== 'unreachable') {
+        this.runInZone(() => this.connectionState.set('unreachable'));
+      }
+    }
+  }
+
+  private runInZone(fn: () => void): void {
+    if (this.ngZone) {
+      this.ngZone.run(fn);
+    } else {
+      fn();
     }
   }
 
@@ -134,19 +151,22 @@ export class WindowApiService {
   }
 
   async moveWindow(payload: MovePayload): Promise<SnapResult | null> {
-    if (!this.liveControl()) {
+    if (!this.liveControl() || this.moveInFlight) {
       return null;
     }
 
+    this.moveInFlight = true;
     try {
       return await firstValueFrom(
         this.http.post<SnapResult>(`${environment.apiBaseUrl}/move`, payload).pipe(
-          timeout(1200),
+          timeout(1000),
           catchError(() => of(null))
         )
       );
     } catch {
       return null;
+    } finally {
+      this.moveInFlight = false;
     }
   }
 
@@ -243,46 +263,47 @@ export class WindowApiService {
 
   async scrollInput(payload: ScrollPayload): Promise<ScrollResponse | null> {
     if (!this.liveControl()) {
-      if (payload.delta !== 0) {
-        this.lastSnapResult.set({
-          success: true,
-          windowTitle: this.activeWindow()?.title || 'Practice Window',
-          appliedRect: null,
-          message: `Practice scroll ${payload.delta > 0 ? 'up' : 'down'} (${payload.delta > 0 ? '+' : ''}${payload.delta}).`
-        });
-      }
       return { success: true };
     }
 
+    // Coalesce rapid scroll deltas if a previous HTTP scroll request is still in flight
+    if (this.scrollInFlight && !payload.begin) {
+      this.pendingScrollDelta = Math.max(
+        -1200,
+        Math.min(1200, this.pendingScrollDelta + payload.delta)
+      );
+      return { success: true };
+    }
+
+    const totalDelta = Math.max(
+      -1200,
+      Math.min(1200, (payload.delta ?? 0) + this.pendingScrollDelta)
+    );
+    this.pendingScrollDelta = 0;
+
     const requestBody: ScrollPayload = payload.begin
       ? {
-          delta: payload.delta ?? 0,
+          delta: totalDelta,
           begin: true,
           x: payload.x,
           y: payload.y
         }
       : {
-          delta: payload.delta
+          delta: totalDelta
         };
 
+    this.scrollInFlight = true;
     try {
-      const res = await firstValueFrom(
+      return await firstValueFrom(
         this.http.post<ScrollResponse>(environment.scrollUrl, requestBody).pipe(
-          timeout(1500),
+          timeout(1200),
           catchError(() => of(null))
         )
       );
-      if (res?.success && payload.delta !== 0) {
-        this.lastSnapResult.set({
-          success: true,
-          windowTitle: this.activeWindow()?.title || '',
-          appliedRect: null,
-          message: `Scrolled ${payload.delta > 0 ? 'up' : 'down'} (${payload.delta > 0 ? '+' : ''}${payload.delta})`
-        });
-      }
-      return res;
     } catch {
       return null;
+    } finally {
+      this.scrollInFlight = false;
     }
   }
 }

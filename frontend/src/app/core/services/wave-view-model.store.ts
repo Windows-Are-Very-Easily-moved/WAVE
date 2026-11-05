@@ -88,6 +88,8 @@ export class WaveViewModelStore {
 
   // Core reactive frame & telemetry signals
   readonly frame = signal<GestureFrameSnapshot>(INITIAL_FRAME);
+  /** High-frequency frame reference read by the outside-Angular Canvas HUD loop at 60 FPS. */
+  latestFrame: GestureFrameSnapshot = INITIAL_FRAME;
   readonly fps = signal<number>(0);
   readonly trackingConfidence = signal<number>(0);
 
@@ -114,6 +116,9 @@ export class WaveViewModelStore {
       (p.scroll ? 1 : 0)
     );
   });
+  readonly practiceCollapsed = signal<boolean>(
+    this.isAllPracticeCompleted(this.loadPracticeFromStorage())
+  );
 
   // Action history, last action, toasts, and accessibility live announcements
   readonly lastActionText = signal<string | null>(null);
@@ -232,6 +237,7 @@ export class WaveViewModelStore {
   private audioCtx: AudioContext | null = null;
   private lastState: GestureState = 'IDLE';
   private lastArmedZone: SnapPosition | null = null;
+  private lastUiSyncMs = -Infinity;
 
   constructor() {
     this.gestureEngine.updateSettings(this.settingsService.settings());
@@ -331,15 +337,25 @@ export class WaveViewModelStore {
     this.practiceProgress.set(updated);
     this.savePracticeToStorage(updated);
 
+    if (this.isAllPracticeCompleted(updated)) {
+      this.practiceCollapsed.set(true);
+    }
+
     const meta = PRACTICE_GESTURE_CARDS.find((c) => c.id === id);
     if (meta) {
       this.announce(`Practice gesture completed: ${meta.name}`);
     }
   }
 
+  togglePracticeCollapsed(force?: boolean): void {
+    const next = force !== undefined ? force : !this.practiceCollapsed();
+    this.practiceCollapsed.set(next);
+  }
+
   resetPractice(): void {
     const reset = { ...INITIAL_PRACTICE_STATE };
     this.practiceProgress.set(reset);
+    this.practiceCollapsed.set(false);
     this.savePracticeToStorage(reset);
     this.announce('Practice checklist reset');
   }
@@ -348,7 +364,8 @@ export class WaveViewModelStore {
 
   async startCamera(videoElement: HTMLVideoElement): Promise<boolean> {
     this.simulationMode.set(false);
-    const trackerOk = await this.trackerService.initialize(2);
+    const numHands = this.settings().enableTwoHandResize ? 2 : 1;
+    const trackerOk = await this.trackerService.initialize(numHands);
     const camOk = await this.cameraService.startCamera(videoElement);
 
     if (trackerOk && camOk) {
@@ -359,11 +376,12 @@ export class WaveViewModelStore {
         );
         const hasHand = trackingFrame.hands.length > 0;
         const confidence = hasHand ? 0.92 : 0;
-        this.ngZone.run(() => {
-          this.fps.set(trackingFrame.fps);
-          this.trackingConfidence.set(confidence);
-          this.applyGestureSnapshot(snapshot);
-        });
+        this.processRealtimeFrame(
+          snapshot,
+          trackingFrame.fps,
+          confidence,
+          trackingFrame.timestampMs
+        );
       });
       return true;
     }
@@ -374,6 +392,7 @@ export class WaveViewModelStore {
     this.trackerService.stopTrackingLoop();
     this.cameraService.stopCamera(videoElement);
     this.gestureEngine.reset();
+    this.latestFrame = INITIAL_FRAME;
     this.frame.set(INITIAL_FRAME);
     this.fps.set(0);
     this.trackingConfidence.set(0);
@@ -383,6 +402,7 @@ export class WaveViewModelStore {
     this.trackerService.stopTrackingLoop();
     this.cameraService.stopCamera(videoElement);
     this.gestureEngine.reset();
+    this.latestFrame = INITIAL_FRAME;
     this.simulationMode.set(true);
     this.fps.set(60);
     this.trackingConfidence.set(0);
@@ -392,6 +412,7 @@ export class WaveViewModelStore {
   disableSimulationMode(): void {
     this.simulationMode.set(false);
     this.gestureEngine.reset();
+    this.latestFrame = INITIAL_FRAME;
     this.frame.set(INITIAL_FRAME);
     this.fps.set(0);
     this.trackingConfidence.set(0);
@@ -409,15 +430,83 @@ export class WaveViewModelStore {
       timestampMs,
       isShiftDown
     );
-    this.fps.set(60);
-    this.trackingConfidence.set(pointer ? 1.0 : 0);
-    this.applyGestureSnapshot(snapshot);
+    this.processRealtimeFrame(snapshot, 60, pointer ? 1.0 : 0, timestampMs);
     return snapshot;
+  }
+
+  /**
+   * Processes high-frequency vision/simulation frames outside Angular's zone.
+   * Updates `latestFrame` every frame for the 60 FPS Canvas HUD, and only enters
+   * `ngZone.run` when discrete UI state changes or at a throttled 4 Hz telemetry rate.
+   */
+  private processRealtimeFrame(
+    snapshot: GestureFrameSnapshot,
+    currentFps: number,
+    confidence: number,
+    timestampMs: number
+  ): void {
+    const prevUi = this.frame();
+    this.latestFrame = snapshot;
+
+    const hasDiscreteEvent = Boolean(
+      snapshot.grabIssued ||
+        snapshot.snapIssued ||
+        snapshot.cycleIssued ||
+        snapshot.resizeIssued ||
+        snapshot.scrollIssued?.begin
+    );
+
+    const hasStateChange =
+      snapshot.state !== prevUi.state ||
+      snapshot.armedZone !== prevUi.armedZone ||
+      snapshot.hoveredZone !== prevUi.hoveredZone ||
+      snapshot.isPinching !== prevUi.isPinching ||
+      Boolean(snapshot.isScrolling) !== Boolean(prevUi.isScrolling);
+
+    // High-frequency streaming commands (live drag & continuous scroll wheel) run outside Angular zone
+    if (!hasDiscreteEvent && !hasStateChange) {
+      if (snapshot.moveIssued) {
+        void this.apiService.moveWindow({
+          x: snapshot.moveIssued.x,
+          y: snapshot.moveIssued.y,
+          deltaX: snapshot.moveIssued.deltaX,
+          deltaY: snapshot.moveIssued.deltaY
+        });
+      }
+      if (snapshot.scrollIssued && !snapshot.scrollIssued.begin) {
+        void this.apiService.scrollInput(snapshot.scrollIssued);
+      }
+    }
+
+    const telemetryDue = timestampMs - this.lastUiSyncMs >= 250;
+    if (hasDiscreteEvent || hasStateChange || telemetryDue) {
+      this.lastUiSyncMs = timestampMs;
+      this.ngZone.run(() => {
+        if (this.fps() !== currentFps) {
+          this.fps.set(currentFps);
+        }
+        if (this.trackingConfidence() !== confidence) {
+          this.trackingConfidence.set(confidence);
+        }
+        if (hasDiscreteEvent || hasStateChange) {
+          this.applyGestureSnapshot(snapshot);
+        } else {
+          this.frame.set(snapshot);
+          if (snapshot.scrollIssued && snapshot.scrollIssued.delta !== 0) {
+            const dir = snapshot.scrollIssued.delta > 0 ? 'up' : 'down';
+            this.lastActionText.set(
+              `Scroll ${dir} (${snapshot.scrollIssued.delta > 0 ? '+' : ''}${snapshot.scrollIssued.delta})`
+            );
+          }
+        }
+      });
+    }
   }
 
   // --- Frame & Side-Effect Processing ---
 
   applyGestureSnapshot(snapshot: GestureFrameSnapshot): void {
+    this.latestFrame = snapshot;
     this.frame.set(snapshot);
 
     // State transition announcements & audio cues
@@ -640,6 +729,10 @@ export class WaveViewModelStore {
     } catch {
       // Ignore WebAudio restriction errors
     }
+  }
+
+  private isAllPracticeCompleted(state: Record<PracticeGestureId, boolean>): boolean {
+    return Boolean(state.hover && state.grab && state.snap && state.scroll);
   }
 
   private loadPracticeFromStorage(): Record<PracticeGestureId, boolean> {

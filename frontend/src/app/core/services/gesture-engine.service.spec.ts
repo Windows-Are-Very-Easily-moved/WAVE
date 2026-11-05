@@ -232,6 +232,11 @@ describe('GestureStateMachine & Geometry', () => {
     expect(snap.scrollIssued?.delta).toBe(100);
     expect(snap.scrollIssued?.begin).toBeUndefined();
 
+    // 3b. Hold V-sign stationary at (0.5, 0.475) -> continues scrolling up at latched velocity!
+    snap = sm.processLandmarks([createSyntheticVSignHand({ x: 0.5, y: 0.475 })], 305);
+    expect(snap.state).toBe('SCROLLING');
+    expect(snap.scrollIssued?.delta).toBe(100);
+
     // 4. Lose V-sign briefly for 80ms (< 150ms scrollExitMs) -> stays in SCROLLING
     snap = sm.processLandmarks([createSyntheticHand({ x: 0.5, y: 0.475 }, 0.14)], 345);
     expect(snap.state).toBe('SCROLLING');

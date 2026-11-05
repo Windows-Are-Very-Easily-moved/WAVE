@@ -23,7 +23,7 @@ export class HandTrackerService {
 
   constructor(private readonly ngZone: NgZone) {}
 
-  async initialize(numHands: number = 2): Promise<boolean> {
+  async initialize(numHands: number = 1): Promise<boolean> {
     if (this.handLandmarker) {
       return true;
     }

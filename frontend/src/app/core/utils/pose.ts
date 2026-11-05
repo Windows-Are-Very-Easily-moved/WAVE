@@ -182,3 +182,4 @@ export function clampScrollDelta(
   const limit = Math.max(1, Math.abs(Math.trunc(maxAbsDelta)));
   return Math.max(-limit, Math.min(limit, Math.round(delta)));
 }
+

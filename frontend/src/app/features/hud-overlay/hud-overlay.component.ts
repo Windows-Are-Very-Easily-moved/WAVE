@@ -156,7 +156,7 @@ export class HudOverlayComponent implements AfterViewInit {
     const h = rect.height;
     if (w <= 0 || h <= 0) return;
 
-    const frame = this.frame ?? this.store.frame();
+    const frame = this.frame ?? this.store.latestFrame;
     const settings = this.settings ?? this.store.settings();
 
     if (frame.cycleIssued) {

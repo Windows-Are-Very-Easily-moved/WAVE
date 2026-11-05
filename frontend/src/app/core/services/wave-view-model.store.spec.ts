@@ -158,6 +158,7 @@ describe('WaveViewModelStore', () => {
     });
 
     // 4. V-Sign Scroll
+    expect(store.practiceCollapsed()).toBe(false);
     store.applyGestureSnapshot(
       createBaseSnapshot({
         state: 'SCROLLING',
@@ -168,12 +169,14 @@ describe('WaveViewModelStore', () => {
     );
     expect(store.practiceProgress().scroll).toBe(true);
     expect(store.practiceCompletedCount()).toBe(4);
+    expect(store.practiceCollapsed()).toBe(true);
     expect(store.stateMeta().chip).toBe('SCROLL');
     expect(mockApiService.scrollInput).toHaveBeenCalledWith({ delta: 180 });
 
     // Reset practice checklist
     store.resetPractice();
     expect(store.practiceCompletedCount()).toBe(0);
+    expect(store.practiceCollapsed()).toBe(false);
     expect(store.practiceProgress()).toEqual({
       hover: false,
       grab: false,

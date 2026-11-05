@@ -322,10 +322,10 @@ import { SettingsPanelComponent } from '../settings-panel/settings-panel.compone
         <!-- INTERACTIVE STAGE -->
         <main
           #viewportContainer
-          class="relative flex-1 min-h-[240px] w-full rounded-[1.75rem] overflow-hidden border border-glass-border bg-background grid-lines shadow-2xl"
+          class="relative flex-1 min-h-[240px] h-full w-full rounded-[1.75rem] overflow-hidden border border-glass-border bg-background grid-lines shadow-2xl"
           [ngClass]="{
             'cursor-crosshair': store.simulationMode(),
-            '!rounded-none !border-0': store.isPipActive()
+            '!rounded-none !border-0 h-screen w-screen': store.isPipActive()
           }"
           (pointerdown)="onSimPointerDown($event)"
           (pointermove)="onSimPointerMove($event)"
@@ -362,7 +362,9 @@ import { SettingsPanelComponent } from '../settings-panel/settings-panel.compone
 
           <!-- Top-Left: Gesture State Card (matches reference Wn) -->
           <div class="pointer-events-none absolute top-3 left-3 z-20 max-w-md">
-            <div class="glass rounded-2xl px-4 py-2.5 flex items-center gap-3">
+            <div
+              class="glass rounded-2xl flex items-center gap-3"
+              [ngClass]="store.isPipActive() ? 'px-3 py-1.5' : 'px-4 py-2.5'">
               <div class="relative flex h-3 w-3 shrink-0 items-center justify-center">
                 <span
                   *ngIf="store.gestureState() !== 'IDLE'"
@@ -407,7 +409,9 @@ import { SettingsPanelComponent } from '../settings-panel/settings-panel.compone
                     {{ store.grabbedWindowTitle() }}
                   </span>
                 </div>
-                <p class="text-xs text-muted-foreground leading-snug">
+                <p
+                  *ngIf="!store.isPipActive()"
+                  class="text-xs text-muted-foreground leading-snug">
                   {{ store.stateMeta().hint }}
                 </p>
               </div>
@@ -448,7 +452,7 @@ import { SettingsPanelComponent } from '../settings-panel/settings-panel.compone
 
             <!-- Tab Hidden Warning -->
             <div
-              *ngIf="store.tabHidden()"
+              *ngIf="store.tabHidden() && !store.isPipActive()"
               class="glass rounded-xl p-3 border border-primary/50 text-xs flex items-start gap-2.5">
               <svg
                 viewBox="0 0 24 24"
@@ -669,12 +673,15 @@ import { SettingsPanelComponent } from '../settings-panel/settings-panel.compone
         </main>
       </div>
 
-      <!-- PRACTICE CHECKLIST & 4 GESTURE CARDS (matches reference ir) -->
+      <!-- PRACTICE CHECKLIST & 4 GESTURE CARDS (collapses automatically once 4/4 completed) -->
       <section
         *ngIf="!store.compactMode()"
-        class="glass rounded-2xl p-3"
+        class="glass rounded-2xl transition-all"
+        [ngClass]="store.practiceCollapsed() ? 'px-3 py-2' : 'p-3'"
         aria-label="Practice checklist">
-        <div class="flex items-center justify-between gap-2 mb-2 px-1">
+        <div
+          class="flex items-center justify-between gap-2 px-1"
+          [ngClass]="{ 'mb-2': !store.practiceCollapsed() }">
           <div class="flex items-center gap-2">
             <svg
               viewBox="0 0 24 24"
@@ -696,19 +703,29 @@ import { SettingsPanelComponent } from '../settings-panel/settings-panel.compone
               All gestures mastered ✨
             </span>
           </div>
-          <button
-            type="button"
-            (click)="store.resetPractice()"
-            class="inline-flex items-center gap-1 text-[11px] font-mono text-muted-foreground hover:text-foreground transition cursor-pointer">
-            <svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" stroke-linecap="round" />
-              <path d="M3 3v5h5" stroke-linecap="round" />
-            </svg>
-            Reset
-          </button>
+          <div class="flex items-center gap-3">
+            <button
+              type="button"
+              (click)="store.togglePracticeCollapsed()"
+              class="inline-flex items-center gap-1 text-[11px] font-mono text-muted-foreground hover:text-foreground transition cursor-pointer">
+              {{ store.practiceCollapsed() ? 'Show cards' : 'Collapse' }}
+            </button>
+            <button
+              type="button"
+              (click)="store.resetPractice()"
+              class="inline-flex items-center gap-1 text-[11px] font-mono text-muted-foreground hover:text-foreground transition cursor-pointer">
+              <svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" stroke-linecap="round" />
+                <path d="M3 3v5h5" stroke-linecap="round" />
+              </svg>
+              Reset
+            </button>
+          </div>
         </div>
 
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div
+          *ngIf="!store.practiceCollapsed()"
+          class="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <div
             *ngFor="let card of store.practiceCards"
             class="rounded-xl px-3 py-2 border transition flex items-start gap-2.5"
@@ -887,8 +904,15 @@ export class ScepterShellComponent implements AfterViewInit {
   private simRafId: number | null = null;
 
   private readonly onVisibilityChangeBound = () => {
-    if (typeof document !== 'undefined' && document.hidden && this.store.cameraStatus() === 'active') {
+    if (typeof document === 'undefined') return;
+    if (this.store.isPipActive()) {
+      this.store.setTabHidden(false);
+      return;
+    }
+    if (document.hidden && this.store.cameraStatus() === 'active') {
       this.store.setTabHidden(true);
+    } else if (!document.hidden) {
+      this.store.setTabHidden(false);
     }
   };
 
@@ -1028,7 +1052,14 @@ export class ScepterShellComponent implements AfterViewInit {
 
       // Keep exact title "WAVEHUD" so the Win32 backend ignores the PiP window too
       pipWindow.document.title = 'WAVEHUD';
+      pipWindow.document.documentElement.style.height = '100%';
+      pipWindow.document.documentElement.style.width = '100%';
       pipWindow.document.body.style.margin = '0';
+      pipWindow.document.body.style.padding = '0';
+      pipWindow.document.body.style.width = '100vw';
+      pipWindow.document.body.style.height = '100vh';
+      pipWindow.document.body.style.display = 'flex';
+      pipWindow.document.body.style.flexDirection = 'column';
       pipWindow.document.body.style.background = '#060911';
       pipWindow.document.body.style.overflow = 'hidden';
 
@@ -1052,8 +1083,12 @@ export class ScepterShellComponent implements AfterViewInit {
       }
 
       const viewportEl = this.viewportRef.nativeElement;
+      viewportEl.style.width = '100vw';
+      viewportEl.style.height = '100vh';
+      viewportEl.style.flex = '1 1 auto';
       pipWindow.document.body.appendChild(viewportEl);
       this.store.isPipActive.set(true);
+      this.store.setTabHidden(false);
 
       const videoEl = this.videoRef.nativeElement;
       if (!this.store.simulationMode() && videoEl.paused && videoEl.srcObject) {
@@ -1062,6 +1097,9 @@ export class ScepterShellComponent implements AfterViewInit {
 
       pipWindow.addEventListener('pagehide', () => {
         this.ngZone.run(() => {
+          viewportEl.style.width = '';
+          viewportEl.style.height = '';
+          viewportEl.style.flex = '';
           this.pipHostSlotRef.nativeElement.appendChild(viewportEl);
           this.store.isPipActive.set(false);
           if (!this.store.simulationMode() && videoEl.paused && videoEl.srcObject) {
@@ -1090,14 +1128,12 @@ export class ScepterShellComponent implements AfterViewInit {
       const tick = (nowMs: number) => {
         if (!this.store.simulationMode()) return;
 
-        this.ngZone.run(() => {
-          this.store.processSimulationStep(
-            this.simPointer,
-            this.simMouseDown,
-            nowMs,
-            this.simShiftDown
-          );
-        });
+        this.store.processSimulationStep(
+          this.simPointer,
+          this.simMouseDown,
+          nowMs,
+          this.simShiftDown
+        );
 
         this.simRafId = requestAnimationFrame(tick);
       };
