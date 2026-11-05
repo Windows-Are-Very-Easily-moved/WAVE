@@ -114,15 +114,15 @@ describe('WaveViewModelStore', () => {
     store.resetPractice();
   });
 
-  it('exposes the 4 adapted W.A.V.E gesture cards and starts with Live control OFF', () => {
-    expect(PRACTICE_GESTURE_CARDS.map((c) => c.id)).toEqual(['hover', 'grab', 'snap', 'scroll']);
+  it('exposes the 5 adapted W.A.V.E gesture cards and starts with Live control OFF', () => {
+    expect(PRACTICE_GESTURE_CARDS.map((c) => c.id)).toEqual(['hover', 'grab', 'snap', 'scroll', 'switch']);
     expect(store.liveControl()).toBe(false);
     expect(store.gestureState()).toBe('IDLE');
     expect(store.practiceCompletedCount()).toBe(0);
     expect(store.stateMeta().chip).toBe('IDLE');
   });
 
-  it('automatically ticks Hover, Grab, Snap to edge, and Scroll in practiceProgress and resets cleanly', () => {
+  it('automatically ticks Hover, Grab, Snap to edge, Scroll, and Switch in practiceProgress and resets cleanly', () => {
     // 1. Hover
     store.applyGestureSnapshot(
       createBaseSnapshot({ state: 'HOVER', cursor: { x: 0.5, y: 0.5 } })
@@ -169,9 +169,21 @@ describe('WaveViewModelStore', () => {
     );
     expect(store.practiceProgress().scroll).toBe(true);
     expect(store.practiceCompletedCount()).toBe(4);
-    expect(store.practiceCollapsed()).toBe(true);
+    expect(store.practiceCollapsed()).toBe(false);
     expect(store.stateMeta().chip).toBe('SCROLL');
     expect(mockApiService.scrollInput).toHaveBeenCalledWith({ delta: 180 });
+
+    // 5. Window Switch
+    store.applyGestureSnapshot(
+      createBaseSnapshot({
+        state: 'HOVER',
+        cycleIssued: { direction: 'next' }
+      })
+    );
+    expect(store.practiceProgress().switch).toBe(true);
+    expect(store.practiceCompletedCount()).toBe(5);
+    expect(store.practiceCollapsed()).toBe(true);
+    expect(mockApiService.cycleWindow).toHaveBeenCalledWith({ direction: 'next' });
 
     // Reset practice checklist
     store.resetPractice();
@@ -181,7 +193,8 @@ describe('WaveViewModelStore', () => {
       hover: false,
       grab: false,
       snap: false,
-      scroll: false
+      scroll: false,
+      switch: false
     });
   });
 

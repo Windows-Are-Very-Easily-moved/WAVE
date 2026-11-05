@@ -574,7 +574,7 @@ export class GestureStateMachine {
             // Open-hand vertical up/down swipe gesture in HOVER state to cycle windows (Virtual Alt+Tab)
             if (
               this.settings.enableWaveCycleGesture &&
-              timestampMs - this.lastPinchReleaseTimestampMs >= 450
+              timestampMs - this.lastPinchReleaseTimestampMs >= 350
             ) {
               const swipePoint =
                 handsMirrored.length > 0 && handsMirrored[0][9]
@@ -582,7 +582,7 @@ export class GestureStateMachine {
                   : rawCursor;
 
               this.hoverSwipeHistory.push({ x: swipePoint.x, y: swipePoint.y, t: timestampMs });
-              const windowCutoff = timestampMs - 380;
+              const windowCutoff = timestampMs - 450;
               while (
                 this.hoverSwipeHistory.length > 0 &&
                 this.hoverSwipeHistory[0].t < windowCutoff
@@ -592,8 +592,8 @@ export class GestureStateMachine {
 
               if (
                 this.hoverSwipeHistory.length >= 3 &&
-                timestampMs - this.lastCycleTimestampMs >= 850 &&
-                timestampMs - this.lastSnapTimestampMs >= 650
+                timestampMs - this.lastCycleTimestampMs >= 750 &&
+                timestampMs - this.lastSnapTimestampMs >= 500
               ) {
                 let lowestSample = this.hoverSwipeHistory[0];
                 for (const sample of this.hoverSwipeHistory) {
@@ -607,7 +607,7 @@ export class GestureStateMachine {
                 const dtSec = Math.max((timestampMs - lowestSample.t) / 1000.0, 0.04);
                 const vy = Math.abs(dy) / dtSec;
 
-                if (dy <= -0.18 && Math.abs(dx) <= Math.abs(dy) * 0.85 && vy >= 0.65) {
+                if (dy <= -0.14 && Math.abs(dx) <= Math.abs(dy) * 1.35 && vy >= 0.45) {
                   cycleIssued = { direction: 'next' };
                   this.lastCycleTimestampMs = timestampMs;
                   this.hoverSwipeHistory = [];

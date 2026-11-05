@@ -13,7 +13,7 @@ import {
 import { Point2D } from '../models/landmark.model';
 import { SnapPosition } from '../models/snap-action.model';
 
-export type PracticeGestureId = 'hover' | 'grab' | 'snap' | 'scroll';
+export type PracticeGestureId = 'hover' | 'grab' | 'snap' | 'scroll' | 'switch';
 
 export interface PracticeCardMeta {
   id: PracticeGestureId;
@@ -25,7 +25,8 @@ export const PRACTICE_GESTURE_CARDS: readonly PracticeCardMeta[] = [
   { id: 'hover', name: 'Hover', hint: 'Open hand, move it' },
   { id: 'grab', name: 'Grab', hint: 'Pinch thumb and index' },
   { id: 'snap', name: 'Snap to edge', hint: 'Drag to a screen edge, release' },
-  { id: 'scroll', name: 'Scroll', hint: 'Peace sign, move up or down' }
+  { id: 'scroll', name: 'Scroll', hint: 'Peace sign, move up or down' },
+  { id: 'switch', name: 'Switch windows', hint: 'Sideways open palm, move up' }
 ];
 
 export interface ActionLogEntry {
@@ -57,7 +58,8 @@ const INITIAL_PRACTICE_STATE: Record<PracticeGestureId, boolean> = {
   hover: false,
   grab: false,
   snap: false,
-  scroll: false
+  scroll: false,
+  switch: false
 };
 
 const INITIAL_FRAME: GestureFrameSnapshot = {
@@ -113,7 +115,8 @@ export class WaveViewModelStore {
       (p.hover ? 1 : 0) +
       (p.grab ? 1 : 0) +
       (p.snap ? 1 : 0) +
-      (p.scroll ? 1 : 0)
+      (p.scroll ? 1 : 0) +
+      (p.switch ? 1 : 0)
     );
   });
   readonly practiceCollapsed = signal<boolean>(
@@ -190,7 +193,7 @@ export class WaveViewModelStore {
         return {
           chip: 'HOVER',
           label: 'TRACKING',
-          hint: 'Pinch thumb & index to grab · Peace sign (V) to scroll',
+          hint: 'Pinch to grab · Peace sign to scroll · Sideways open palm up to switch windows',
           tone: 'gold'
         };
       case 'GRABBING':
@@ -615,7 +618,16 @@ export class WaveViewModelStore {
 
     // 5. Wave cycle
     if (snapshot.cycleIssued) {
-      this.recordAction('Cycled window', `Direction: ${snapshot.cycleIssued.direction}`);
+      this.markPracticeComplete('switch');
+      this.playSound('snap');
+      this.recordAction('Switched window', `Direction: ${snapshot.cycleIssued.direction}`);
+      this.pushToast(
+        'Window switched',
+        this.liveControl()
+          ? 'Switched to next window via Win32'
+          : 'Practice mode — turn on Live control to switch real windows',
+        this.liveControl() ? 'armed' : 'gold'
+      );
       void this.apiService.cycleWindow({
         direction: snapshot.cycleIssued.direction
       });
@@ -648,7 +660,8 @@ export class WaveViewModelStore {
   }
 
   triggerCycle(direction: 'next' | 'prev'): void {
-    this.recordAction('Cycled window', direction);
+    this.markPracticeComplete('switch');
+    this.recordAction('Switched window', direction);
     void this.apiService.cycleWindow({ direction });
   }
 
@@ -766,7 +779,13 @@ export class WaveViewModelStore {
   }
 
   private isAllPracticeCompleted(state: Record<PracticeGestureId, boolean>): boolean {
-    return Boolean(state.hover && state.grab && state.snap && state.scroll);
+    return Boolean(
+      state.hover &&
+        state.grab &&
+        state.snap &&
+        state.scroll &&
+        state.switch
+    );
   }
 
   private loadPracticeFromStorage(): Record<PracticeGestureId, boolean> {
@@ -778,7 +797,8 @@ export class WaveViewModelStore {
         hover: !!parsed.hover,
         grab: !!parsed.grab,
         snap: !!parsed.snap,
-        scroll: !!parsed.scroll
+        scroll: !!parsed.scroll,
+        switch: !!parsed.switch
       };
     } catch {
       return { ...INITIAL_PRACTICE_STATE };

@@ -725,7 +725,7 @@ import { SettingsPanelComponent } from '../settings-panel/settings-panel.compone
 
         <div
           *ngIf="!store.practiceCollapsed()"
-          class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
           <div
             *ngFor="let card of store.practiceCards"
             class="rounded-xl px-3 py-2 border transition flex items-start gap-2.5"
@@ -833,7 +833,7 @@ import { SettingsPanelComponent } from '../settings-panel/settings-panel.compone
                   W.A.V.E Gesture Guide
                 </h2>
                 <p class="text-xs text-muted-foreground">
-                  Four spatial gestures to move, snap, and scroll your Windows desktop.
+                  Spatial hand gestures to move, snap, scroll, and switch windows on your Windows desktop.
                 </p>
               </div>
             </div>
