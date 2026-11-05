@@ -8,6 +8,8 @@ import {
   GrabPayload,
   MovePayload,
   ResizePayload,
+  ScrollPayload,
+  ScrollResponse,
   SnapPayload,
   SnapResult
 } from '../models/snap-action.model';
@@ -24,11 +26,26 @@ export class WindowApiService {
   readonly recentWindows = signal<ActiveWindowInfo[]>([]);
   readonly lastSnapResult = signal<SnapResult | null>(null);
 
+  /**
+   * Authoritative Live Control gate (default false = Practice Mode).
+   * When false, all window grab, move, snap, resize, cycle, and scroll commands
+   * are blocked from reaching Windows while health polling and the HUD continue running.
+   */
+  readonly liveControl = signal<boolean>(false);
+
   private pollHandle: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     this.startHealthPolling();
     this.destroyRef.onDestroy(() => this.stopHealthPolling());
+  }
+
+  setLiveControl(enabled: boolean): void {
+    this.liveControl.set(enabled);
+  }
+
+  toggleLiveControl(): void {
+    this.liveControl.update((v) => !v);
   }
 
   startHealthPolling(): void {
@@ -84,6 +101,17 @@ export class WindowApiService {
   }
 
   async grabWindow(payload: GrabPayload): Promise<SnapResult | null> {
+    if (!this.liveControl()) {
+      const practiceRes: SnapResult = {
+        success: true,
+        windowTitle: this.activeWindow()?.title || 'Practice Window',
+        appliedRect: null,
+        message: 'Practice grab (Live control off).'
+      };
+      this.lastSnapResult.set(practiceRes);
+      return practiceRes;
+    }
+
     try {
       const res = await firstValueFrom(
         this.http.post<SnapResult>(`${environment.apiBaseUrl}/grab`, payload).pipe(
@@ -106,6 +134,10 @@ export class WindowApiService {
   }
 
   async moveWindow(payload: MovePayload): Promise<SnapResult | null> {
+    if (!this.liveControl()) {
+      return null;
+    }
+
     try {
       return await firstValueFrom(
         this.http.post<SnapResult>(`${environment.apiBaseUrl}/move`, payload).pipe(
@@ -119,6 +151,17 @@ export class WindowApiService {
   }
 
   async snapWindow(payload: SnapPayload): Promise<SnapResult | null> {
+    if (!this.liveControl()) {
+      const practiceRes: SnapResult = {
+        success: true,
+        windowTitle: this.activeWindow()?.title || 'Practice Window',
+        appliedRect: null,
+        message: `Practice snap ${payload.position} (Live control off).`
+      };
+      this.lastSnapResult.set(practiceRes);
+      return practiceRes;
+    }
+
     try {
       const res = await firstValueFrom(
         this.http.post<SnapResult>(`${environment.apiBaseUrl}/snap`, payload).pipe(
@@ -142,6 +185,17 @@ export class WindowApiService {
   }
 
   async resizeWindow(payload: ResizePayload): Promise<SnapResult | null> {
+    if (!this.liveControl()) {
+      const practiceRes: SnapResult = {
+        success: true,
+        windowTitle: this.activeWindow()?.title || 'Practice Window',
+        appliedRect: null,
+        message: `Practice resize ${payload.scaleFactor.toFixed(2)}x (Live control off).`
+      };
+      this.lastSnapResult.set(practiceRes);
+      return practiceRes;
+    }
+
     try {
       const res = await firstValueFrom(
         this.http.post<SnapResult>(`${environment.apiBaseUrl}/resize`, payload).pipe(
@@ -159,6 +213,17 @@ export class WindowApiService {
   }
 
   async cycleWindow(payload: CyclePayload): Promise<SnapResult | null> {
+    if (!this.liveControl()) {
+      const practiceRes: SnapResult = {
+        success: true,
+        windowTitle: this.activeWindow()?.title || 'Practice Window',
+        appliedRect: null,
+        message: `Practice cycle ${payload.direction} (Live control off).`
+      };
+      this.lastSnapResult.set(practiceRes);
+      return practiceRes;
+    }
+
     try {
       const res = await firstValueFrom(
         this.http.post<SnapResult>(`${environment.apiBaseUrl}/cycle`, payload).pipe(
@@ -175,5 +240,49 @@ export class WindowApiService {
       return null;
     }
   }
-}
 
+  async scrollInput(payload: ScrollPayload): Promise<ScrollResponse | null> {
+    if (!this.liveControl()) {
+      if (payload.delta !== 0) {
+        this.lastSnapResult.set({
+          success: true,
+          windowTitle: this.activeWindow()?.title || 'Practice Window',
+          appliedRect: null,
+          message: `Practice scroll ${payload.delta > 0 ? 'up' : 'down'} (${payload.delta > 0 ? '+' : ''}${payload.delta}).`
+        });
+      }
+      return { success: true };
+    }
+
+    const requestBody: ScrollPayload = payload.begin
+      ? {
+          delta: payload.delta ?? 0,
+          begin: true,
+          x: payload.x,
+          y: payload.y
+        }
+      : {
+          delta: payload.delta
+        };
+
+    try {
+      const res = await firstValueFrom(
+        this.http.post<ScrollResponse>(environment.scrollUrl, requestBody).pipe(
+          timeout(1500),
+          catchError(() => of(null))
+        )
+      );
+      if (res?.success && payload.delta !== 0) {
+        this.lastSnapResult.set({
+          success: true,
+          windowTitle: this.activeWindow()?.title || '',
+          appliedRect: null,
+          message: `Scrolled ${payload.delta > 0 ? 'up' : 'down'} (${payload.delta > 0 ? '+' : ''}${payload.delta})`
+        });
+      }
+      return res;
+    } catch {
+      return null;
+    }
+  }
+}

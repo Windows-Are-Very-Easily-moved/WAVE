@@ -1,7 +1,13 @@
 import { Point2D, HandLandmarks } from './landmark.model';
-import { SnapPosition } from './snap-action.model';
+import { ScrollPayload, SnapPosition } from './snap-action.model';
 
-export type GestureState = 'IDLE' | 'HOVER' | 'GRABBING' | 'DRAGGING' | 'RELEASED';
+export type GestureState =
+  | 'IDLE'
+  | 'HOVER'
+  | 'GRABBING'
+  | 'DRAGGING'
+  | 'RELEASED'
+  | 'SCROLLING';
 
 export type FilterType = 'lerp' | 'oneEuro';
 
@@ -22,6 +28,14 @@ export interface ScepterSettings {
   enableWaveCycleGesture: boolean;
   enableLiveDrag: boolean;
   snapRatio: number;
+  // V-Sign Scroll parameters
+  scrollEnabled: boolean;
+  scrollGain: number;
+  scrollDeadzone: number;
+  vSpreadMin: number;
+  scrollEnterMs: number;
+  scrollExitMs: number;
+  invertScroll: boolean;
 }
 
 export const DEFAULT_SETTINGS: ScepterSettings = {
@@ -40,7 +54,14 @@ export const DEFAULT_SETTINGS: ScepterSettings = {
   enableTwoHandResize: true,
   enableWaveCycleGesture: true,
   enableLiveDrag: true,
-  snapRatio: 0.5
+  snapRatio: 0.5,
+  scrollEnabled: true,
+  scrollGain: 4000,
+  scrollDeadzone: 0.002,
+  vSpreadMin: 0.35,
+  scrollEnterMs: 120,
+  scrollExitMs: 150,
+  invertScroll: false
 };
 
 export interface GestureFrameSnapshot {
@@ -48,6 +69,8 @@ export interface GestureFrameSnapshot {
   cursor: Point2D | null;
   rawCursor: Point2D | null;
   isPinching: boolean;
+  isScrolling?: boolean;
+  scrollDelta?: number;
   normalizedPinchDistance: number;
   rawPinchDistance: number;
   pinchProgress: number; // 0 (open) -> 1 (closed/pinched)
@@ -61,5 +84,5 @@ export interface GestureFrameSnapshot {
   snapIssued?: { position: SnapPosition; ratio: number };
   resizeIssued?: { scaleFactor: number };
   cycleIssued?: { direction: 'next' | 'prev' };
+  scrollIssued?: ScrollPayload;
 }
-

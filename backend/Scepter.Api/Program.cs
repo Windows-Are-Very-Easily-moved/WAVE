@@ -19,6 +19,23 @@ builder.Services.AddControllers()
     {
         options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: true));
+    })
+    .ConfigureApiBehaviorOptions(options =>
+    {
+        options.InvalidModelStateResponseFactory = context =>
+        {
+            var firstError = context.ModelState.Values
+                .SelectMany(v => v.Errors)
+                .Select(e => e.ErrorMessage)
+                .FirstOrDefault() ?? "Invalid request payload.";
+
+            return new Microsoft.AspNetCore.Mvc.BadRequestObjectResult(new
+            {
+                success = false,
+                error = "InvalidRequest",
+                message = firstError
+            });
+        };
     });
 
 builder.Services.AddEndpointsApiExplorer();
@@ -50,6 +67,7 @@ builder.Services.AddCors(options =>
 builder.Services.AddSingleton<ForegroundTracker>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ForegroundTracker>());
 builder.Services.AddSingleton<IWindowService, WindowService>();
+builder.Services.AddSingleton<IInputService, InputService>();
 
 var app = builder.Build();
 

@@ -165,8 +165,9 @@ public sealed class WindowService : IWindowService
         MONITORINFO monitorInfo = GetMonitorInfoForWindowOrPrimary(referenceWindow);
         RECT screenBounds = monitorInfo.rcMonitor;
 
-        int pixelX = screenBounds.Left + (int)Math.Round(clampedX * (screenBounds.Width - 1));
-        int pixelY = screenBounds.Top + (int)Math.Round(clampedY * (screenBounds.Height - 1));
+        POINT targetPoint = ScrollCalculator.NormalizedToScreenPixels(clampedX, clampedY, screenBounds);
+        int pixelX = targetPoint.X;
+        int pixelY = targetPoint.Y;
 
         IntPtr hitHwnd = NativeMethods.WindowFromPoint(new POINT(pixelX, pixelY));
         IntPtr rootHwnd = hitHwnd != IntPtr.Zero

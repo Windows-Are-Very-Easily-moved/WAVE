@@ -59,7 +59,7 @@ import { SettingsPanelComponent } from '../settings-panel/settings-panel.compone
           <div class="chip state-chip" [attr.data-state]="frame().state">
             <span class="dot"></span>
             <span class="label">STATE:</span>
-            <strong>{{ frame().state }}</strong>
+            <strong>{{ frame().state === 'SCROLLING' ? 'SCROLL' : frame().state }}</strong>
           </div>
 
           <!-- FPS Counter -->
@@ -93,9 +93,19 @@ import { SettingsPanelComponent } from '../settings-panel/settings-panel.compone
           <button
             type="button"
             class="btn-mode"
+            [class.active]="apiService.liveControl()"
+            [attr.aria-pressed]="apiService.liveControl()"
+            (click)="apiService.toggleLiveControl()"
+            title="Toggle Live Control (Off = Practice mode, On = Control real Windows)">
+            <span>Live control {{ apiService.liveControl() ? 'on' : 'off' }}</span>
+          </button>
+
+          <button
+            type="button"
+            class="btn-mode"
             [class.active]="simulationMode()"
             (click)="toggleSimulationMode()"
-            title="Toggle Mouse Simulation Mode (Click = Pinch, Drag = Move)">
+            title="Toggle Mouse Simulation Mode (Click = Pinch, Drag = Move, Shift + Move = Scroll)">
             <span class="icon">{{ simulationMode() ? '🖱️' : '📷' }}</span>
             <span>{{ simulationMode() ? 'Simulation Mode (Mouse)' : 'Webcam Mode' }}</span>
           </button>
@@ -404,6 +414,15 @@ import { SettingsPanelComponent } from '../settings-panel/settings-panel.compone
     .state-chip[data-state='DRAGGING'] .dot {
       background: #f5b942;
       box-shadow: 0 0 10px #f5b942;
+    }
+    .state-chip[data-state='SCROLLING'] {
+      border-color: rgba(134, 239, 172, 0.65);
+      color: #bbf7d0;
+      background: rgba(134, 239, 172, 0.14);
+    }
+    .state-chip[data-state='SCROLLING'] .dot {
+      background: #4ade80;
+      box-shadow: 0 0 10px #4ade80;
     }
     .sub-badge {
       font-size: 0.65rem;
@@ -908,9 +927,20 @@ export class ScepterShellComponent implements AfterViewInit {
 
   private simPointer: Point2D | null = null;
   private simMouseDown = false;
+  private simShiftDown = false;
   private simRafId: number | null = null;
+  private readonly onKeyDownBound = (e: KeyboardEvent) => {
+    if (e.key === 'Shift') this.simShiftDown = true;
+  };
+  private readonly onKeyUpBound = (e: KeyboardEvent) => {
+    if (e.key === 'Shift') this.simShiftDown = false;
+  };
 
   constructor() {
+    if (typeof window !== 'undefined') {
+      window.addEventListener('keydown', this.onKeyDownBound);
+      window.addEventListener('keyup', this.onKeyUpBound);
+    }
     // Keep gesture state machine settings synchronized with live sliders
     effect(() => {
       const currentSettings = this.settingsService.settings();
@@ -918,6 +948,10 @@ export class ScepterShellComponent implements AfterViewInit {
     });
 
     this.destroyRef.onDestroy(() => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('keydown', this.onKeyDownBound);
+        window.removeEventListener('keyup', this.onKeyUpBound);
+      }
       this.stopAllLoops();
     });
   }
@@ -976,23 +1010,27 @@ export class ScepterShellComponent implements AfterViewInit {
   onSimPointerDown(event: PointerEvent): void {
     if (!this.simulationMode()) return;
     this.simMouseDown = true;
+    this.simShiftDown = event.shiftKey;
     this.updateSimPointerFromEvent(event);
   }
 
   onSimPointerMove(event: PointerEvent): void {
     if (!this.simulationMode()) return;
+    this.simShiftDown = event.shiftKey;
     this.updateSimPointerFromEvent(event);
   }
 
   onSimPointerUp(event: PointerEvent): void {
     if (!this.simulationMode()) return;
     this.simMouseDown = false;
+    this.simShiftDown = event.shiftKey;
     this.updateSimPointerFromEvent(event);
   }
 
   onSimPointerLeave(): void {
     if (!this.simulationMode()) return;
     this.simMouseDown = false;
+    this.simShiftDown = false;
     this.simPointer = null;
   }
 
@@ -1101,7 +1139,8 @@ export class ScepterShellComponent implements AfterViewInit {
         const snapshot = this.gestureEngine.processPointerSimulation(
           this.simPointer,
           this.simMouseDown,
-          nowMs
+          nowMs,
+          this.simShiftDown
         );
 
         this.ngZone.run(() => {
@@ -1164,6 +1203,10 @@ export class ScepterShellComponent implements AfterViewInit {
       void this.apiService.cycleWindow({
         direction: snapshot.cycleIssued.direction
       });
+    }
+
+    if (snapshot.scrollIssued) {
+      void this.apiService.scrollInput(snapshot.scrollIssued);
     }
   }
 }

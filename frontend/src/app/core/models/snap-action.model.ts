@@ -34,6 +34,17 @@ export interface CyclePayload {
   handle?: number;
 }
 
+export interface ScrollPayload {
+  delta: number;
+  begin?: boolean;
+  x?: number;
+  y?: number;
+}
+
+export interface ScrollResponse {
+  success: boolean;
+}
+
 export interface RectDto {
   left: number;
   top: number;

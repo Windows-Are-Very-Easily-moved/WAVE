@@ -107,10 +107,10 @@ export class HudOverlayComponent implements AfterViewInit, OnChanges {
 
     // 3. Draw 21-landmark hand skeleton(s)
     for (const hand of this.frame.handsMirrored) {
-      this.drawHandSkeleton(ctx, w, h, hand, this.frame.isPinching);
+      this.drawHandSkeleton(ctx, w, h, hand, this.frame.isPinching, !!this.frame.isScrolling);
     }
 
-    // 4. Draw glowing spatial cursor & tightening pinch ring
+    // 4. Draw glowing spatial cursor, tightening pinch ring, or V-sign scroll indicator
     if (this.frame.cursor) {
       this.drawCursorAndPinchRing(ctx, w, h);
     }
@@ -313,13 +313,14 @@ export class HudOverlayComponent implements AfterViewInit, OnChanges {
     w: number,
     h: number,
     hand: HandLandmarks,
-    isPinching: boolean
+    isPinching: boolean,
+    isScrolling: boolean = false
   ): void {
     ctx.save();
 
     // Draw bones
     ctx.lineWidth = 2;
-    ctx.strokeStyle = isPinching
+    ctx.strokeStyle = isPinching || isScrolling
       ? 'rgba(245, 185, 66, 0.78)'
       : 'rgba(148, 163, 184, 0.52)';
 
@@ -333,10 +334,20 @@ export class HudOverlayComponent implements AfterViewInit, OnChanges {
       ctx.stroke();
     }
 
-    // Highlight line between thumb tip (4) and index tip (8)
+    // Highlight line between thumb tip (4) and index tip (8) or V-sign tips (8 and 12)
     const thumb = hand[4];
     const index = hand[8];
-    if (thumb && index) {
+    const middle = hand[12];
+    if (isScrolling && index && middle) {
+      ctx.beginPath();
+      ctx.moveTo(index.x * w, index.y * h);
+      ctx.lineTo(middle.x * w, middle.y * h);
+      ctx.strokeStyle = '#86efac';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([4, 4]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    } else if (thumb && index) {
       ctx.beginPath();
       ctx.moveTo(thumb.x * w, thumb.y * h);
       ctx.lineTo(index.x * w, index.y * h);
@@ -345,21 +356,24 @@ export class HudOverlayComponent implements AfterViewInit, OnChanges {
       ctx.stroke();
     }
 
-    // Draw 21 landmark joints
+    // Draw 21 landmark joints (highlight index #8 and middle #12 fingertips during V-sign scroll)
     for (let i = 0; i < hand.length; i++) {
       const lm = hand[i];
-      const isPinchTip = i === 4 || i === 8;
-      const radius = isPinchTip ? 5.5 : 3.2;
+      const isScrollTip = isScrolling && (i === 8 || i === 12);
+      const isPinchTip = !isScrolling && (i === 4 || i === 8);
+      const radius = isScrollTip ? 6.5 : isPinchTip ? 5.5 : 3.2;
 
       ctx.beginPath();
       ctx.arc(lm.x * w, lm.y * h, radius, 0, Math.PI * 2);
-      ctx.fillStyle = isPinchTip
-        ? '#f5b942'
-        : isPinching
-          ? '#fde68a'
-          : '#e2e8f0';
-      ctx.shadowColor = 'rgba(245, 185, 66, 0.8)';
-      ctx.shadowBlur = isPinchTip ? 10 : 0;
+      ctx.fillStyle = isScrollTip
+        ? '#86efac'
+        : isPinchTip
+          ? '#f5b942'
+          : isPinching
+            ? '#fde68a'
+            : '#e2e8f0';
+      ctx.shadowColor = isScrollTip ? 'rgba(134, 239, 172, 0.9)' : 'rgba(245, 185, 66, 0.8)';
+      ctx.shadowBlur = isScrollTip ? 14 : isPinchTip ? 10 : 0;
       ctx.fill();
     }
 
@@ -372,8 +386,54 @@ export class HudOverlayComponent implements AfterViewInit, OnChanges {
     const cy = cursor.y * h;
     const progress = this.frame.pinchProgress;
     const isPinching = this.frame.isPinching;
+    const isScrolling = !!this.frame.isScrolling;
+    const scrollDelta = this.frame.scrollDelta ?? 0;
 
     ctx.save();
+
+    if (isScrolling) {
+      const intensity = Math.min(1, Math.abs(scrollDelta) / 400);
+      const radius = 24 + intensity * 8;
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(134, 239, 172, ${0.55 + intensity * 0.45})`;
+      ctx.lineWidth = 2.5 + intensity * 1.5;
+      ctx.shadowColor = 'rgba(134, 239, 172, 0.9)';
+      ctx.shadowBlur = 14 + intensity * 12;
+      ctx.stroke();
+
+      // Up/Down directional arrow at cursor with intensity proportional to scroll speed
+      const arrowLen = 12 + intensity * 14;
+      const dir = scrollDelta >= 0 ? -1 : 1; // -1 = up on canvas, +1 = down on canvas
+      ctx.beginPath();
+      if (scrollDelta === 0) {
+        // Bidirectional idle scroll indicator
+        ctx.moveTo(cx, cy - 11);
+        ctx.lineTo(cx, cy + 11);
+        ctx.moveTo(cx - 5, cy - 6);
+        ctx.lineTo(cx, cy - 11);
+        ctx.lineTo(cx + 5, cy - 6);
+        ctx.moveTo(cx - 5, cy + 6);
+        ctx.lineTo(cx, cy + 11);
+        ctx.lineTo(cx + 5, cy + 6);
+      } else {
+        const tipY = cy + dir * arrowLen;
+        const tailY = cy - dir * (arrowLen * 0.45);
+        ctx.moveTo(cx, tailY);
+        ctx.lineTo(cx, tipY);
+        ctx.moveTo(cx - 6, tipY - dir * 7);
+        ctx.lineTo(cx, tipY);
+        ctx.lineTo(cx + 6, tipY - dir * 7);
+      }
+      ctx.strokeStyle = `rgba(255, 243, 196, ${0.75 + intensity * 0.25})`;
+      ctx.lineWidth = 2.5 + intensity;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+
+      ctx.restore();
+      return;
+    }
 
     // Outer tightening ring: shrinks from 36px down to 14px as pinch closes
     const ringRadius = 36 - progress * 22;

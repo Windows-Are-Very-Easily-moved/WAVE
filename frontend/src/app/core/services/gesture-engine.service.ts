@@ -7,7 +7,7 @@ import {
   ScepterSettings
 } from '../models/gesture.model';
 import { HandLandmarks, Point2D } from '../models/landmark.model';
-import { SnapPosition } from '../models/snap-action.model';
+import { ScrollPayload, SnapPosition } from '../models/snap-action.model';
 import {
   computePinchCursor,
   computePinchMetrics,
@@ -15,14 +15,26 @@ import {
   mirrorHandLandmarks
 } from '../utils/geometry';
 import { LerpFilter2D, OneEuroFilter2D, PointFilter2D } from '../utils/lerp';
+import {
+  clampScrollDelta,
+  computeScrollDeltaStep,
+  computeVSignCursor,
+  isVSign
+} from '../utils/pose';
+
+/** Minimum interval (~30 requests/sec) between batched scroll delta requests. */
+const SCROLL_BATCH_INTERVAL_MS = 33;
 
 /**
  * Explicit, pure, unit-testable state machine for spatial hand gestures:
- * IDLE -> HOVER (hand visible) -> GRABBING (pinch held) -> DRAGGING (moved past deadzone) -> RELEASED.
+ * IDLE -> HOVER (hand visible) -> GRABBING (pinch held) -> DRAGGING (moved past deadzone) -> RELEASED
+ *      -> SCROLLING (V-sign held for scrollEnterMs while not pinching).
  *
  * Includes:
  * - Hand-size-normalized pinch detection with hysteresis (enter vs exit threshold)
- * - Pluggable 2D cursor smoothing (Lerp or One Euro filter) applied BEFORE edge-zone checks
+ * - Orientation-independent V-sign (peace sign) pose detection & relative vertical wheel scrolling
+ * - Pinch priority: pinching always preempts or exits SCROLLING immediately
+ * - Pluggable 2D cursor smoothing (Lerp or One Euro filter) applied BEFORE edge-zone or scroll checks
  * - Edge-zone dwell timer (~150ms default) before a zone is armed
  * - Release snap debounce/cooldown (~800ms default)
  * - Tracking-loss tolerance (~300ms grace window during an active grab)
@@ -49,22 +61,37 @@ export class GestureStateMachine {
   private initialTwoHandDistance: number | null = null;
   private hoverSwipeHistory: { x: number; y: number; t: number }[] = [];
 
+  // V-sign scroll state tracking
+  private vSignEnteredAtMs: number | null = null;
+  private vSignLostAtMs: number | null = null;
+  private prevScrollSmoothedY: number | null = null;
+  private scrollRemainder = 0;
+  private accumulatedScrollDelta = 0;
+  private lastScrollDeltaEmitTimestampMs = -Infinity;
+  private lastVisualScrollDelta = 0;
+
   private lerpFilter: LerpFilter2D;
   private oneEuroFilter: OneEuroFilter2D;
+  private scrollLerpFilter: LerpFilter2D;
+  private scrollOneEuroFilter: OneEuroFilter2D;
   private activeFilterType: FilterType;
 
   constructor(private settings: ScepterSettings = { ...DEFAULT_SETTINGS }) {
     this.lerpFilter = new LerpFilter2D(this.settings.lerpAlpha);
     this.oneEuroFilter = new OneEuroFilter2D();
+    this.scrollLerpFilter = new LerpFilter2D(this.settings.lerpAlpha);
+    this.scrollOneEuroFilter = new OneEuroFilter2D();
     this.activeFilterType = this.settings.filterType;
   }
 
   updateSettings(newSettings: ScepterSettings): void {
-    this.settings = { ...newSettings };
+    this.settings = { ...DEFAULT_SETTINGS, ...newSettings };
     this.lerpFilter.setAlpha(this.settings.lerpAlpha);
+    this.scrollLerpFilter.setAlpha(this.settings.lerpAlpha);
     if (this.activeFilterType !== this.settings.filterType) {
       this.activeFilterType = this.settings.filterType;
       this.getActiveFilter().reset();
+      this.getActiveScrollFilter().reset();
     }
   }
 
@@ -85,8 +112,21 @@ export class GestureStateMachine {
     this.initialTwoHandDistance = null;
     this.lastMoveCursor = null;
     this.hoverSwipeHistory = [];
+    this.clearScrollTracking();
     this.lerpFilter.reset();
     this.oneEuroFilter.reset();
+  }
+
+  private clearScrollTracking(): void {
+    this.vSignEnteredAtMs = null;
+    this.vSignLostAtMs = null;
+    this.prevScrollSmoothedY = null;
+    this.scrollRemainder = 0;
+    this.accumulatedScrollDelta = 0;
+    this.lastScrollDeltaEmitTimestampMs = -Infinity;
+    this.lastVisualScrollDelta = 0;
+    this.scrollLerpFilter?.reset();
+    this.scrollOneEuroFilter?.reset();
   }
 
   /**
@@ -102,6 +142,11 @@ export class GestureStateMachine {
     const primaryHand = mirroredHands[0];
     const rawCursor = computePinchCursor(primaryHand);
     const { rawDistance, normalizedDistance } = computePinchMetrics(primaryHand);
+
+    const vSignDetected =
+      this.settings.scrollEnabled &&
+      isVSign(primaryHand, { vSpreadMin: this.settings.vSpreadMin });
+    const rawScrollCursor = computeVSignCursor(primaryHand);
 
     // Optional stretch goal: two-hand simultaneous pinch resize
     let resizeIssued: { scaleFactor: number } | undefined;
@@ -140,7 +185,9 @@ export class GestureStateMachine {
       rawDistance,
       timestampMs,
       mirroredHands,
-      isTwoHandActive
+      isTwoHandActive,
+      vSignDetected,
+      rawScrollCursor
     );
 
     if (resizeIssued) {
@@ -152,11 +199,13 @@ export class GestureStateMachine {
 
   /**
    * Process synthetic mouse/pointer input for Demo/Simulation mode using the exact same state machine.
+   * Holding Shift while moving the mouse emulates a V-sign scroll gesture.
    */
   processPointerSimulation(
     cursor: Point2D | null,
     isMouseDown: boolean,
-    timestampMs: number
+    timestampMs: number,
+    isShiftDown: boolean = false
   ): GestureFrameSnapshot {
     if (!cursor) {
       return this.handleMissingHand(timestampMs);
@@ -166,16 +215,22 @@ export class GestureStateMachine {
     // When mouse button is up, feed an open-hand distance well above exit threshold (0.65).
     const simulatedNormalizedDistance = isMouseDown ? 0.08 : 0.65;
     const simulatedRawDistance = isMouseDown ? 0.016 : 0.13;
+    const clampedCursor: Point2D = {
+      x: Math.max(0, Math.min(1, cursor.x)),
+      y: Math.max(0, Math.min(1, cursor.y))
+    };
+
+    const simulatedVSign = Boolean(isShiftDown && !isMouseDown && this.settings.scrollEnabled);
 
     return this.processInput(
-      {
-        x: Math.max(0, Math.min(1, cursor.x)),
-        y: Math.max(0, Math.min(1, cursor.y))
-      },
+      clampedCursor,
       simulatedNormalizedDistance,
       simulatedRawDistance,
       timestampMs,
-      []
+      [],
+      false,
+      simulatedVSign,
+      clampedCursor
     );
   }
 
@@ -185,13 +240,15 @@ export class GestureStateMachine {
     rawPinchDistance: number,
     timestampMs: number,
     handsMirrored: HandLandmarks[],
-    isTwoHandActive = false
+    isTwoHandActive = false,
+    vSignDetected = false,
+    rawScrollCursor: Point2D = rawCursor
   ): GestureFrameSnapshot {
     this.lastHandSeenTimestampMs = timestampMs;
 
     // 1. Apply smoothing filter BEFORE any edge-zone or deadzone evaluation
     const filter = this.getActiveFilter();
-    const smoothedCursor = filter.filter(rawCursor, timestampMs);
+    const smoothedPinchCursor = filter.filter(rawCursor, timestampMs);
 
     // Compute instantaneous cursor velocity (normalized units/sec)
     let velocity = 0;
@@ -201,12 +258,12 @@ export class GestureStateMachine {
       timestampMs > this.lastCursorTimestampMs
     ) {
       const dtSec = Math.max((timestampMs - this.lastCursorTimestampMs) / 1000.0, 0.004);
-      velocity = euclideanDistance2D(smoothedCursor, this.lastSmoothedCursor) / dtSec;
+      velocity = euclideanDistance2D(smoothedPinchCursor, this.lastSmoothedCursor) / dtSec;
     }
-    this.lastSmoothedCursor = smoothedCursor;
+    this.lastSmoothedCursor = smoothedPinchCursor;
     this.lastCursorTimestampMs = timestampMs;
 
-    // 2. Hysteresis pinch detection
+    // 2. Hysteresis pinch detection (Pinch always wins over scrolling)
     const enterThreshold = this.settings.pinchEnterThreshold;
     const exitThreshold = enterThreshold * this.settings.pinchExitMultiplier;
 
@@ -229,33 +286,40 @@ export class GestureStateMachine {
     );
 
     // 3. Evaluate edge zone at smoothed cursor
-    const zoneAtCursor = this.evaluateEdgeZone(smoothedCursor);
+    const zoneAtCursor = this.evaluateEdgeZone(smoothedPinchCursor);
     let dwellProgress = 0;
 
     let grabIssued: Point2D | undefined;
     let moveIssued: { x: number; y: number; deltaX: number; deltaY: number } | undefined;
     let snapIssued: { position: SnapPosition; ratio: number } | undefined;
     let cycleIssued: { direction: 'next' | 'prev' } | undefined;
+    let scrollIssued: ScrollPayload | undefined;
 
-    // If transitioning out of RELEASED on the next frame, settle into HOVER or GRABBING
+    let activeCursor: Point2D = smoothedPinchCursor;
+    let activeRawCursor: Point2D = rawCursor;
+
+    // If transitioning out of RELEASED on the next frame, settle into HOVER
     if (this.state === 'RELEASED') {
       this.state = 'HOVER';
     }
 
     if (this.isPinching) {
+      // Pinch always wins: cancel any active or pending scroll state immediately
+      this.clearScrollTracking();
       this.hoverSwipeHistory = [];
+
       if (!wasPinching || (this.state !== 'GRABBING' && this.state !== 'DRAGGING')) {
         // Transition -> GRABBING
         this.state = 'GRABBING';
-        this.grabOrigin = { ...smoothedCursor };
+        this.grabOrigin = { ...smoothedPinchCursor };
         this.hoveredZone = null;
         this.hoverZoneEnteredAtMs = null;
         this.armedZone = null;
-        this.lastMoveCursor = { ...smoothedCursor };
-        grabIssued = { ...smoothedCursor };
+        this.lastMoveCursor = { ...smoothedPinchCursor };
+        grabIssued = { ...smoothedPinchCursor };
       } else if (this.state === 'GRABBING') {
         const distFromGrab = this.grabOrigin
-          ? euclideanDistance2D(smoothedCursor, this.grabOrigin)
+          ? euclideanDistance2D(smoothedPinchCursor, this.grabOrigin)
           : 0;
         if (distFromGrab >= this.settings.dragDeadzone) {
           this.state = 'DRAGGING';
@@ -266,24 +330,24 @@ export class GestureStateMachine {
       // BUT only when NOT in a snap zone and NOT actively resizing with two hands
       if (this.state === 'DRAGGING' && this.settings.enableLiveDrag && !zoneAtCursor && !isTwoHandActive) {
         if (!this.lastMoveCursor) {
-          this.lastMoveCursor = { ...smoothedCursor };
+          this.lastMoveCursor = { ...smoothedPinchCursor };
         } else if (timestampMs - this.lastMoveTimestampMs >= 32) { // smooth ~30 FPS stream
-          const deltaX = smoothedCursor.x - this.lastMoveCursor.x;
-          const deltaY = smoothedCursor.y - this.lastMoveCursor.y;
+          const deltaX = smoothedPinchCursor.x - this.lastMoveCursor.x;
+          const deltaY = smoothedPinchCursor.y - this.lastMoveCursor.y;
           if (Math.abs(deltaX) > 0.002 || Math.abs(deltaY) > 0.002) {
             moveIssued = {
-              x: smoothedCursor.x,
-              y: smoothedCursor.y,
+              x: smoothedPinchCursor.x,
+              y: smoothedPinchCursor.y,
               deltaX,
               deltaY
             };
-            this.lastMoveCursor = { ...smoothedCursor };
+            this.lastMoveCursor = { ...smoothedPinchCursor };
             this.lastMoveTimestampMs = timestampMs;
           }
         }
       } else {
         // Reset last move point when hovering in a snap zone so leaving the zone is seamless
-        this.lastMoveCursor = { ...smoothedCursor };
+        this.lastMoveCursor = { ...smoothedPinchCursor };
       }
 
       // While grabbing or dragging, track edge-zone dwell
@@ -308,9 +372,10 @@ export class GestureStateMachine {
       }
     } else {
       // Not pinching
-      if (wasPinching && (this.state === 'GRABBING' || this.state === 'DRABBING' as any || this.state === 'DRAGGING')) {
+      if (wasPinching && (this.state === 'GRABBING' || this.state === 'DRAGGING')) {
         // Pinch just released!
         this.state = 'RELEASED';
+        this.clearScrollTracking();
 
         const cooldownReady = timestampMs - this.lastSnapTimestampMs >= this.settings.cooldownMs;
 
@@ -342,64 +407,173 @@ export class GestureStateMachine {
         this.lastPinchReleaseTimestampMs = timestampMs;
         this.hoverSwipeHistory = [];
       } else {
-        this.state = 'HOVER';
-        this.hoveredZone = zoneAtCursor;
-        this.hoverZoneEnteredAtMs = null;
-        this.armedZone = null;
+        // Evaluate V-sign SCROLLING state transitions and relative vertical movement
+        const scrollFilter = this.getActiveScrollFilter();
 
-        // Open-hand vertical up/down swipe gesture in HOVER state to cycle windows (Virtual Alt+Tab)
-        // Because palm stays flat facing the webcam during an up/down motion, thumb (#4) and index (#8)
-        // never foreshorten or overlap, avoiding false pinch triggers!
-        if (
-          this.settings.enableWaveCycleGesture &&
-          timestampMs - this.lastPinchReleaseTimestampMs >= 450
-        ) {
-          const swipePoint = handsMirrored.length > 0 && handsMirrored[0][9]
-            ? handsMirrored[0][9] // Middle-finger MCP (palm center)
-            : rawCursor;
-
-          this.hoverSwipeHistory.push({ x: swipePoint.x, y: swipePoint.y, t: timestampMs });
-          const windowCutoff = timestampMs - 380;
-          while (this.hoverSwipeHistory.length > 0 && this.hoverSwipeHistory[0].t < windowCutoff) {
-            this.hoverSwipeHistory.shift();
+        if (!this.settings.scrollEnabled) {
+          this.clearScrollTracking();
+          this.state = 'HOVER';
+        } else if (this.state === 'SCROLLING') {
+          if (vSignDetected) {
+            this.vSignLostAtMs = null;
+          } else {
+            if (this.vSignLostAtMs === null) {
+              this.vSignLostAtMs = timestampMs;
+            }
+            if (timestampMs - this.vSignLostAtMs >= this.settings.scrollExitMs) {
+              this.state = 'HOVER';
+              this.clearScrollTracking();
+            }
           }
 
-          if (
-            this.hoverSwipeHistory.length >= 3 &&
-            timestampMs - this.lastCycleTimestampMs >= 850 &&
-            timestampMs - this.lastSnapTimestampMs >= 650
-          ) {
-            // Find the lowest (largest y) sample in the recent 380ms window to measure upward travel
-            let lowestSample = this.hoverSwipeHistory[0];
-            for (const sample of this.hoverSwipeHistory) {
-              if (sample.y > lowestSample.y) {
-                lowestSample = sample;
-              }
+          if (this.state === 'SCROLLING') {
+            const smoothedScrollCursor = scrollFilter.filter(rawScrollCursor, timestampMs);
+            activeCursor = smoothedScrollCursor;
+            activeRawCursor = rawScrollCursor;
+            this.hoveredZone = null;
+            this.hoverZoneEnteredAtMs = null;
+            this.armedZone = null;
+            this.hoverSwipeHistory = [];
+
+            const dy =
+              this.prevScrollSmoothedY !== null
+                ? smoothedScrollCursor.y - this.prevScrollSmoothedY
+                : 0;
+            this.prevScrollSmoothedY = smoothedScrollCursor.y;
+
+            const step = computeScrollDeltaStep({
+              dy,
+              scrollDeadzone: this.settings.scrollDeadzone,
+              scrollGain: this.settings.scrollGain,
+              invertScroll: this.settings.invertScroll,
+              remainder: this.scrollRemainder
+            });
+
+            this.scrollRemainder = step.remainder;
+            this.accumulatedScrollDelta += step.delta;
+            if (step.delta !== 0) {
+              this.lastVisualScrollDelta = step.delta;
+            } else if (Math.abs(dy) < this.settings.scrollDeadzone) {
+              this.lastVisualScrollDelta = Math.trunc(this.lastVisualScrollDelta * 0.7);
             }
 
-            const dx = swipePoint.x - lowestSample.x;
-            const dy = swipePoint.y - lowestSample.y; // Negative when swiping UP (screen Y=0 is top)
-            const dtSec = Math.max((timestampMs - lowestSample.t) / 1000.0, 0.04);
-            const vy = Math.abs(dy) / dtSec;
-
-            // Only trigger on an UPWARD swipe (dy <= -0.18) so lowering the hand back down never reverses the cycle!
-            if (dy <= -0.18 && Math.abs(dx) <= Math.abs(dy) * 0.85 && vy >= 0.65) {
-              cycleIssued = { direction: 'next' };
-              this.lastCycleTimestampMs = timestampMs;
-              this.hoverSwipeHistory = [];
+            if (
+              this.accumulatedScrollDelta !== 0 &&
+              timestampMs - this.lastScrollDeltaEmitTimestampMs >= SCROLL_BATCH_INTERVAL_MS
+            ) {
+              const clamped = clampScrollDelta(this.accumulatedScrollDelta);
+              if (clamped !== 0) {
+                scrollIssued = { delta: clamped };
+                this.lastVisualScrollDelta = clamped;
+              }
+              this.accumulatedScrollDelta = 0;
+              this.lastScrollDeltaEmitTimestampMs = timestampMs;
             }
           }
         } else {
-          this.hoverSwipeHistory = [];
+          // Currently in IDLE or HOVER: check if V-sign is held long enough to enter SCROLLING
+          if (vSignDetected) {
+            this.hoverSwipeHistory = [];
+            if (this.vSignEnteredAtMs === null) {
+              this.vSignEnteredAtMs = timestampMs;
+              scrollFilter.reset();
+            }
+            this.vSignLostAtMs = null;
+
+            const smoothedScrollCursor = scrollFilter.filter(rawScrollCursor, timestampMs);
+            const heldMs = timestampMs - this.vSignEnteredAtMs;
+
+            if (heldMs >= this.settings.scrollEnterMs) {
+              this.state = 'SCROLLING';
+              activeCursor = smoothedScrollCursor;
+              activeRawCursor = rawScrollCursor;
+              this.prevScrollSmoothedY = smoothedScrollCursor.y;
+              this.scrollRemainder = 0;
+              this.accumulatedScrollDelta = 0;
+              this.lastScrollDeltaEmitTimestampMs = -Infinity;
+              this.lastVisualScrollDelta = 0;
+              this.hoveredZone = null;
+              this.hoverZoneEnteredAtMs = null;
+              this.armedZone = null;
+
+              scrollIssued = {
+                delta: 0,
+                begin: true,
+                x: smoothedScrollCursor.x,
+                y: smoothedScrollCursor.y
+              };
+            } else {
+              this.state = 'HOVER';
+              this.hoveredZone = zoneAtCursor;
+              this.hoverZoneEnteredAtMs = null;
+              this.armedZone = null;
+            }
+          } else {
+            this.clearScrollTracking();
+            this.state = 'HOVER';
+            this.hoveredZone = zoneAtCursor;
+            this.hoverZoneEnteredAtMs = null;
+            this.armedZone = null;
+
+            // Open-hand vertical up/down swipe gesture in HOVER state to cycle windows (Virtual Alt+Tab)
+            if (
+              this.settings.enableWaveCycleGesture &&
+              timestampMs - this.lastPinchReleaseTimestampMs >= 450
+            ) {
+              const swipePoint =
+                handsMirrored.length > 0 && handsMirrored[0][9]
+                  ? handsMirrored[0][9] // Middle-finger MCP (palm center)
+                  : rawCursor;
+
+              this.hoverSwipeHistory.push({ x: swipePoint.x, y: swipePoint.y, t: timestampMs });
+              const windowCutoff = timestampMs - 380;
+              while (
+                this.hoverSwipeHistory.length > 0 &&
+                this.hoverSwipeHistory[0].t < windowCutoff
+              ) {
+                this.hoverSwipeHistory.shift();
+              }
+
+              if (
+                this.hoverSwipeHistory.length >= 3 &&
+                timestampMs - this.lastCycleTimestampMs >= 850 &&
+                timestampMs - this.lastSnapTimestampMs >= 650
+              ) {
+                let lowestSample = this.hoverSwipeHistory[0];
+                for (const sample of this.hoverSwipeHistory) {
+                  if (sample.y > lowestSample.y) {
+                    lowestSample = sample;
+                  }
+                }
+
+                const dx = swipePoint.x - lowestSample.x;
+                const dy = swipePoint.y - lowestSample.y; // Negative when swiping UP (screen Y=0 is top)
+                const dtSec = Math.max((timestampMs - lowestSample.t) / 1000.0, 0.04);
+                const vy = Math.abs(dy) / dtSec;
+
+                if (dy <= -0.18 && Math.abs(dx) <= Math.abs(dy) * 0.85 && vy >= 0.65) {
+                  cycleIssued = { direction: 'next' };
+                  this.lastCycleTimestampMs = timestampMs;
+                  this.hoverSwipeHistory = [];
+                }
+              }
+            } else {
+              this.hoverSwipeHistory = [];
+            }
+          }
         }
       }
     }
 
+    const isScrolling = this.state === 'SCROLLING';
+
     return {
       state: this.state,
-      cursor: smoothedCursor,
-      rawCursor,
+      cursor: activeCursor,
+      rawCursor: activeRawCursor,
       isPinching: this.isPinching,
+      isScrolling,
+      scrollDelta: isScrolling ? this.lastVisualScrollDelta : 0,
       normalizedPinchDistance,
       rawPinchDistance,
       pinchProgress,
@@ -411,7 +585,8 @@ export class GestureStateMachine {
       grabIssued,
       moveIssued,
       snapIssued,
-      cycleIssued
+      cycleIssued,
+      scrollIssued
     };
   }
 
@@ -427,6 +602,8 @@ export class GestureStateMachine {
         cursor: this.lastSmoothedCursor,
         rawCursor: this.lastSmoothedCursor,
         isPinching: this.isPinching,
+        isScrolling: false,
+        scrollDelta: 0,
         normalizedPinchDistance: 0,
         rawPinchDistance: 0,
         pinchProgress: 1,
@@ -438,13 +615,15 @@ export class GestureStateMachine {
       };
     }
 
-    // Grace period expired or no active grab -> cancel grab and return to IDLE
+    // Hand loss immediately exits SCROLLING or cancels expired grab -> IDLE
     this.reset();
     return {
       state: 'IDLE',
       cursor: null,
       rawCursor: null,
       isPinching: false,
+      isScrolling: false,
+      scrollDelta: 0,
       normalizedPinchDistance: 1,
       rawPinchDistance: 1,
       pinchProgress: 0,
@@ -480,6 +659,10 @@ export class GestureStateMachine {
   private getActiveFilter(): PointFilter2D {
     return this.activeFilterType === 'oneEuro' ? this.oneEuroFilter : this.lerpFilter;
   }
+
+  private getActiveScrollFilter(): PointFilter2D {
+    return this.activeFilterType === 'oneEuro' ? this.scrollOneEuroFilter : this.scrollLerpFilter;
+  }
 }
 
 @Injectable({ providedIn: 'root' })
@@ -497,13 +680,13 @@ export class GestureEngineService {
   processPointerSimulation(
     cursor: Point2D | null,
     isMouseDown: boolean,
-    timestampMs: number
+    timestampMs: number,
+    isShiftDown: boolean = false
   ): GestureFrameSnapshot {
-    return this.machine.processPointerSimulation(cursor, isMouseDown, timestampMs);
+    return this.machine.processPointerSimulation(cursor, isMouseDown, timestampMs, isShiftDown);
   }
 
   reset(): void {
     this.machine.reset();
   }
 }
-

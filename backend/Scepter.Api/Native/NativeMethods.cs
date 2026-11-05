@@ -39,6 +39,10 @@ public static class NativeMethods
     public const uint WS_VISIBLE = 0x10000000;
     public const uint WS_EX_TOOLWINDOW = 0x00000080;
 
+    // --- SendInput Constants ---
+    public const uint INPUT_MOUSE = 0;
+    public const uint MOUSEEVENTF_WHEEL = 0x0800;
+
     public static readonly IntPtr HWND_TOP = new(0);
     public static readonly IntPtr HWND_BOTTOM = new(1);
 
@@ -58,6 +62,12 @@ public static class NativeMethods
 
     [DllImport("user32.dll")]
     public static extern IntPtr WindowFromPoint(POINT Point);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool SetCursorPos(int X, int Y);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern uint SendInput(uint nInputs, [In] INPUT[] pInputs, int cbSize);
 
     [DllImport("user32.dll", ExactSpelling = true)]
     public static extern IntPtr GetAncestor(IntPtr hwnd, uint gaFlags);

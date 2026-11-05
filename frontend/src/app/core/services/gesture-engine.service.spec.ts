@@ -32,6 +32,47 @@ function createSyntheticHand(mirroredCursor: Point2D, rawPinchDist: number, hand
   return landmarks;
 }
 
+/**
+ * Helper to synthesize a V-sign hand centered at `mirroredCursor` with index (8) & middle (12) extended
+ * and ring (16) & pinky (20) curled.
+ */
+function createSyntheticVSignHand(
+  mirroredCursor: Point2D,
+  rawPinchDist = 0.14,
+  handScale = 0.20
+): HandLandmarks {
+  const unmirroredX = mirrorX(mirroredCursor.x);
+  const tipY = mirroredCursor.y;
+  const wristY = Math.min(1, tipY + 0.36);
+
+  const lm: HandLandmarks = Array.from({ length: 21 }, () => ({
+    x: unmirroredX,
+    y: wristY,
+    z: 0
+  }));
+
+  lm[0] = { x: unmirroredX, y: wristY, z: 0 };
+  lm[9] = { x: unmirroredX, y: wristY - handScale, z: 0 };
+
+  // Spread index (8) and middle (12) horizontally by 0.10 (normalized spread = 0.10 / 0.20 = 0.50 > 0.35)
+  lm[6] = { x: unmirroredX - 0.05, y: wristY - 0.20, z: 0 };
+  lm[8] = { x: unmirroredX - 0.05, y: tipY, z: 0 };
+
+  lm[10] = { x: unmirroredX + 0.05, y: wristY - 0.20, z: 0 };
+  lm[12] = { x: unmirroredX + 0.05, y: tipY, z: 0 };
+
+  // Ring (16) and pinky (20) curled close to wrist
+  lm[14] = { x: unmirroredX + 0.06, y: wristY - 0.20, z: 0 };
+  lm[16] = { x: unmirroredX + 0.06, y: wristY - 0.12, z: 0 };
+  lm[18] = { x: unmirroredX + 0.08, y: wristY - 0.20, z: 0 };
+  lm[20] = { x: unmirroredX + 0.08, y: wristY - 0.12, z: 0 };
+
+  // Thumb tip (4) separated from index tip (8) by rawPinchDist
+  lm[4] = { x: lm[8].x, y: lm[8].y + rawPinchDist, z: 0 };
+
+  return lm;
+}
+
 describe('GestureStateMachine & Geometry', () => {
   const fastSettings: ScepterSettings = {
     ...DEFAULT_SETTINGS,
@@ -165,6 +206,63 @@ describe('GestureStateMachine & Geometry', () => {
     sm.processLandmarks([createSyntheticHand({ x: 0.5, y: 0.45 }, 0.14)], 1280);
     const upSnap = sm.processLandmarks([createSyntheticHand({ x: 0.5, y: 0.25 }, 0.14)], 1360);
     expect(upSnap.cycleIssued).toEqual({ direction: 'next' });
+  });
+
+  it('enters SCROLLING when V-sign holds for scrollEnterMs (120ms), emits begin+deltas, and exits after scrollExitMs (150ms)', () => {
+    const sm = new GestureStateMachine(fastSettings);
+
+    // 1. V-sign starts at (0.5, 0.5) at t = 100ms -> still HOVER before 120ms dwell
+    let snap = sm.processLandmarks([createSyntheticVSignHand({ x: 0.5, y: 0.5 })], 100);
+    expect(snap.state).toBe('HOVER');
+    expect(snap.scrollIssued).toBeUndefined();
+
+    // 2. V-sign held at t = 225ms (>= 120ms) -> enters SCROLLING and emits begin: true with delta: 0
+    snap = sm.processLandmarks([createSyntheticVSignHand({ x: 0.5, y: 0.5 })], 225);
+    expect(snap.state).toBe('SCROLLING');
+    expect(snap.scrollIssued).toEqual({
+      delta: 0,
+      begin: true,
+      x: 0.5,
+      y: 0.5
+    });
+
+    // 3. Move V-sign hand UP (y = 0.5 -> 0.475, dy = -0.025) -> positive wheel delta (scroll up)
+    snap = sm.processLandmarks([createSyntheticVSignHand({ x: 0.5, y: 0.475 })], 265);
+    expect(snap.state).toBe('SCROLLING');
+    expect(snap.scrollIssued?.delta).toBe(100);
+    expect(snap.scrollIssued?.begin).toBeUndefined();
+
+    // 4. Lose V-sign briefly for 80ms (< 150ms scrollExitMs) -> stays in SCROLLING
+    snap = sm.processLandmarks([createSyntheticHand({ x: 0.5, y: 0.475 }, 0.14)], 345);
+    expect(snap.state).toBe('SCROLLING');
+
+    // 5. V-sign lost for 160ms total (>= 150ms scrollExitMs) -> exits SCROLLING to HOVER
+    snap = sm.processLandmarks([createSyntheticHand({ x: 0.5, y: 0.475 }, 0.14)], 505);
+    expect(snap.state).toBe('HOVER');
+  });
+
+  it('gives pinch priority over SCROLLING and exits SCROLLING immediately on hand loss', () => {
+    const sm = new GestureStateMachine(fastSettings);
+
+    // Enter SCROLLING
+    sm.processLandmarks([createSyntheticVSignHand({ x: 0.5, y: 0.5 })], 100);
+    let snap = sm.processLandmarks([createSyntheticVSignHand({ x: 0.5, y: 0.5 })], 230);
+    expect(snap.state).toBe('SCROLLING');
+
+    // Start pinching while fingers are in V-sign -> Pinch wins immediately -> GRABBING
+    snap = sm.processLandmarks([createSyntheticVSignHand({ x: 0.5, y: 0.5 }, 0.03)], 270);
+    expect(snap.state).toBe('GRABBING');
+    expect(snap.isPinching).toBe(true);
+    expect(snap.grabIssued).toBeDefined();
+
+    // Re-enter SCROLLING on a fresh state machine and verify hand loss exits to IDLE immediately
+    const sm2 = new GestureStateMachine(fastSettings);
+    sm2.processPointerSimulation({ x: 0.4, y: 0.6 }, false, 100, true);
+    snap = sm2.processPointerSimulation({ x: 0.4, y: 0.6 }, false, 230, true);
+    expect(snap.state).toBe('SCROLLING');
+
+    const lost = sm2.processPointerSimulation(null, false, 270, false);
+    expect(lost.state).toBe('IDLE');
   });
 });
 

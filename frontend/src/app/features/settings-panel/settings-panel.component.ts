@@ -151,8 +151,105 @@ import { FilterType } from '../../core/models/gesture.model';
             (ngModelChange)="settingsService.update('snapRatio', +$event)" />
         </div>
 
+        <!-- V-Sign Scroll Direction (Natural / Inverted) -->
+        <div class="control-row">
+          <div class="label-group">
+            <label>V-Sign Scroll Direction</label>
+            <span class="badge">{{ s().invertScroll ? 'Inverted' : 'Natural' }}</span>
+          </div>
+          <div class="segmented-control">
+            <button
+              type="button"
+              [class.active]="!s().invertScroll"
+              (click)="settingsService.update('invertScroll', false)">
+              Natural (Up = Up)
+            </button>
+            <button
+              type="button"
+              [class.active]="s().invertScroll"
+              (click)="settingsService.update('invertScroll', true)">
+              Inverted
+            </button>
+          </div>
+        </div>
+
+        <!-- Scroll Gain -->
+        <div class="control-row">
+          <div class="label-group">
+            <label>Scroll Gain</label>
+            <span class="value-chip">{{ s().scrollGain }}</span>
+          </div>
+          <input
+            type="range"
+            min="1000"
+            max="8000"
+            step="250"
+            [ngModel]="s().scrollGain"
+            (ngModelChange)="settingsService.update('scrollGain', +$event)" />
+          <small class="hint">Wheel units per normalized frame height (default 4000)</small>
+        </div>
+
+        <!-- Scroll Deadzone -->
+        <div class="control-row">
+          <div class="label-group">
+            <label>Scroll Deadzone</label>
+            <span class="value-chip">{{ s().scrollDeadzone | number:'1.3-4' }}</span>
+          </div>
+          <input
+            type="range"
+            min="0.0005"
+            max="0.010"
+            step="0.0005"
+            [ngModel]="s().scrollDeadzone"
+            (ngModelChange)="settingsService.update('scrollDeadzone', +$event)" />
+        </div>
+
+        <!-- V-Spread Min -->
+        <div class="control-row">
+          <div class="label-group">
+            <label>V-Sign Spread Min</label>
+            <span class="value-chip">{{ s().vSpreadMin | number:'1.2-2' }}</span>
+          </div>
+          <input
+            type="range"
+            min="0.20"
+            max="0.65"
+            step="0.01"
+            [ngModel]="s().vSpreadMin"
+            (ngModelChange)="settingsService.update('vSpreadMin', +$event)" />
+        </div>
+
+        <!-- Scroll Enter / Exit Dwell -->
+        <div class="control-row">
+          <div class="label-group">
+            <label>Scroll Enter / Exit Hold</label>
+            <span class="value-chip">{{ s().scrollEnterMs }}ms / {{ s().scrollExitMs }}ms</span>
+          </div>
+          <input
+            type="range"
+            min="40"
+            max="350"
+            step="10"
+            [ngModel]="s().scrollEnterMs"
+            (ngModelChange)="settingsService.update('scrollEnterMs', +$event)" />
+          <input
+            type="range"
+            min="50"
+            max="400"
+            step="10"
+            [ngModel]="s().scrollExitMs"
+            (ngModelChange)="settingsService.update('scrollExitMs', +$event)" />
+        </div>
+
         <!-- Feature Toggles -->
         <div class="toggles-row">
+          <label class="checkbox-pill">
+            <input
+              type="checkbox"
+              [ngModel]="s().scrollEnabled"
+              (ngModelChange)="settingsService.update('scrollEnabled', !!$event)" />
+            <span>V-Sign Scroll</span>
+          </label>
           <label class="checkbox-pill">
             <input
               type="checkbox"
