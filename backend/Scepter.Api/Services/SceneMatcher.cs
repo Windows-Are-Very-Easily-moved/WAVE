@@ -67,6 +67,16 @@ public static class SceneMatcher
             {
                 if (usedHandles.Contains(candidate.Handle)) continue;
 
+                // Prioritize exact handle match if the window is still open with the same process
+                if (saved.Handle.HasValue && saved.Handle.Value != 0 &&
+                    candidate.Handle.ToInt64() == saved.Handle.Value &&
+                    string.Equals(saved.ProcessName, candidate.ProcessName, StringComparison.OrdinalIgnoreCase))
+                {
+                    bestScore = 2.0;
+                    bestMatch = candidate;
+                    break;
+                }
+
                 double score = CalculateMatchScore(saved, candidate, isUwp);
                 if (score > bestScore && score >= 0.5) // Minimum 0.5 threshold to qualify as a valid match
                 {

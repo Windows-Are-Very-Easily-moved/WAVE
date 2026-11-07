@@ -832,11 +832,12 @@ import { ScenesPanelComponent } from '../scenes-panel/scenes-panel.component';
         aria-modal="true"
         aria-labelledby="wave-guide-title">
         <div
-          class="fixed inset-0 bg-background/75 backdrop-blur-sm"
+          class="fixed inset-0 bg-[#05070d]/90"
           (click)="store.toggleGuideModal(false)"
           aria-hidden="true"></div>
         <div
-          class="relative z-10 w-full max-w-lg rounded-3xl border border-glass-border glass-strong p-6 text-foreground shadow-2xl space-y-5">
+          (wheel)="$event.stopPropagation()"
+          class="relative z-10 max-h-[82vh] overflow-y-auto w-full max-w-lg rounded-2xl border border-slate-700 bg-[#0d111a] p-6 text-foreground shadow-2xl space-y-5">
           <div class="flex items-start justify-between gap-4">
             <div class="flex items-center gap-3">
               <img

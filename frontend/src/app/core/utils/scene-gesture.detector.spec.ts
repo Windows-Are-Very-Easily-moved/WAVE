@@ -179,8 +179,8 @@ describe('SceneGestureDetector & Pose Classification', () => {
 
     // Restart hold
     detector.update(threeHand, 'HOVER', 0.001, 2000);
-    // Interrupted by rapid hand motion
-    res = detector.update(threeHand, 'HOVER', 0.05, 2200);
+    // Interrupted by rapid hand motion (> 1.8 normalized units/sec)
+    res = detector.update(threeHand, 'HOVER', 2.5, 2200);
     expect(res.progress).toBe(0);
     expect(res.triggered).toBe(false);
   });

@@ -66,6 +66,7 @@ export const SCENE_PLACEMENT_PRESETS: readonly ScenePlacementPreset[] = [
 ];
 
 export interface SceneWindowSummary {
+  handle?: number | null;
   processName: string;
   rect: WindowFractionalRect;
   state: SceneWindowState;

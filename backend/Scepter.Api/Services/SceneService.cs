@@ -275,7 +275,37 @@ public sealed class SceneService : ISceneService
 
         var successfullyPlaced = new List<(IntPtr Hwnd, int ZOrder)>();
 
-        // 2. Position matched windows
+        // 2a. Phase A: Un-maximize / un-minimize all matched windows first so Chromium/Electron/Win32
+        // frames finish transitioning out of maximized/minimized state before we query DWM border bounds
+        // and apply target coordinates.
+        bool anyRestoredFromZoomOrIcon = false;
+        foreach (var match in matchResult.Matched)
+        {
+            IntPtr hWnd = match.Candidate.Handle;
+            if (!NativeMethods.IsWindow(hWnd)) continue;
+            if (_tracker.IsProtectedOrInvalidWindow(hWnd) || _tracker.IsSelfWindow(hWnd)) continue;
+
+            var placement = WINDOWPLACEMENT.Create();
+            bool hasPlacement = SceneNativeMethods.GetWindowPlacement(hWnd, ref placement);
+            bool isMaxOrMin = NativeMethods.IsZoomed(hWnd) ||
+                              NativeMethods.IsIconic(hWnd) ||
+                              (hasPlacement && (placement.showCmd == NativeMethods.SW_SHOWMAXIMIZED ||
+                                                placement.showCmd == NativeMethods.SW_SHOWMINIMIZED));
+
+            if (isMaxOrMin)
+            {
+                NativeMethods.ShowWindow(hWnd, NativeMethods.SW_RESTORE);
+                anyRestoredFromZoomOrIcon = true;
+            }
+        }
+
+        if (anyRestoredFromZoomOrIcon)
+        {
+            // Give Windows DWM & Chromium/Electron message loops time to complete un-maximizing
+            Thread.Sleep(85);
+        }
+
+        // 2b. Phase B: Position matched windows into their exact target zones
         foreach (var match in matchResult.Matched)
         {
             IntPtr hWnd = match.Candidate.Handle;
@@ -295,10 +325,35 @@ public sealed class SceneService : ISceneService
 
             try
             {
-                // Restore first so SetWindowPos and coordinates apply cleanly
+                bool shouldMaximize =
+                    string.Equals(target.State, SceneWindowState.Maximized, StringComparison.OrdinalIgnoreCase) &&
+                    target.Rect.W >= 0.98 &&
+                    target.Rect.H >= 0.98;
+
+                bool shouldMinimize =
+                    string.Equals(target.State, SceneWindowState.Minimized, StringComparison.OrdinalIgnoreCase);
+
+                if (shouldMinimize)
+                {
+                    NativeMethods.ShowWindow(hWnd, NativeMethods.SW_SHOWMINIMIZED);
+                    successfullyPlaced.Add((hWnd, target.ZOrder));
+                    restored.Add(new RestoredWindowInfo(target.ProcessName, target.ClassName, target.TitleHint, target.Rect));
+                    continue;
+                }
+
+                if (shouldMaximize)
+                {
+                    NativeMethods.ShowWindow(hWnd, NativeMethods.SW_SHOWMAXIMIZED);
+                    successfullyPlaced.Add((hWnd, target.ZOrder));
+                    restored.Add(new RestoredWindowInfo(target.ProcessName, target.ClassName, target.TitleHint, target.Rect));
+                    continue;
+                }
+
+                // Ensure window is in normal restored state before placing into a split/quarter zone
                 if (NativeMethods.IsZoomed(hWnd) || NativeMethods.IsIconic(hWnd))
                 {
-                    NativeMethods.ShowWindow(hWnd, NativeMethods.SW_RESTORE);
+                    NativeMethods.ShowWindow(hWnd, NativeMethods.SW_SHOWNORMAL);
+                    Thread.Sleep(35);
                 }
 
                 var targetMonitor = SceneLayoutMath.ResolveTargetMonitor(target.MonitorDeviceName, monitors);
@@ -337,14 +392,32 @@ public sealed class SceneService : ISceneService
                     continue;
                 }
 
-                // Apply maximized or minimized state if saved
-                if (string.Equals(target.State, SceneWindowState.Maximized, StringComparison.OrdinalIgnoreCase))
+                // Second pass border verification in case restoring from maximized changed DWM border metrics
+                if (NativeMethods.GetWindowRect(hWnd, out RECT postRect))
                 {
-                    NativeMethods.ShowWindow(hWnd, NativeMethods.SW_SHOWMAXIMIZED);
-                }
-                else if (string.Equals(target.State, SceneWindowState.Minimized, StringComparison.OrdinalIgnoreCase))
-                {
-                    NativeMethods.ShowWindow(hWnd, NativeMethods.SW_SHOWMINIMIZED);
+                    int hr2 = NativeMethods.DwmGetWindowAttribute(
+                        hWnd,
+                        NativeMethods.DWMWA_EXTENDED_FRAME_BOUNDS,
+                        out RECT postFrameBounds,
+                        Marshal.SizeOf<RECT>());
+
+                    if (hr2 == 0)
+                    {
+                        RECT refinedRect = SnapCalculator.CompensateInvisibleBorders(desiredVisibleRect, postRect, postFrameBounds);
+                        if (Math.Abs(refinedRect.Left - postRect.Left) > 2 ||
+                            Math.Abs(refinedRect.Width - postRect.Width) > 2 ||
+                            Math.Abs(refinedRect.Height - postRect.Height) > 2)
+                        {
+                            NativeMethods.SetWindowPos(
+                                hWnd,
+                                IntPtr.Zero,
+                                refinedRect.Left,
+                                refinedRect.Top,
+                                refinedRect.Width,
+                                refinedRect.Height,
+                                flags);
+                        }
+                    }
                 }
 
                 successfullyPlaced.Add((hWnd, target.ZOrder));
@@ -356,19 +429,16 @@ public sealed class SceneService : ISceneService
             }
         }
 
-        // 3. Bring scene windows to the front in back-to-front Z-order
+        // 3. Bring all scene windows to the front in back-to-front Z-order so split-screen apps are all visible
         var orderedPlaced = successfullyPlaced.OrderByDescending(p => p.ZOrder).ToList();
         foreach (var item in orderedPlaced)
         {
+            NativeMethods.ForceForegroundWindow(item.Hwnd);
             NativeMethods.SetWindowPos(
                 item.Hwnd,
                 NativeMethods.HWND_TOP,
                 0, 0, 0, 0,
                 NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_SHOWWINDOW);
-        }
-        if (orderedPlaced.Count > 0)
-        {
-            NativeMethods.SetForegroundWindow(orderedPlaced[^1].Hwnd);
         }
 
         // 4. Missing windows
@@ -468,6 +538,15 @@ public sealed class SceneService : ISceneService
             }
 
             string title = NativeMethods.GetWindowTitle(hWnd);
+            if (string.IsNullOrWhiteSpace(title)) return true;
+
+            if (!NativeMethods.IsIconic(hWnd) &&
+                NativeMethods.GetWindowRect(hWnd, out RECT wr) &&
+                (wr.Width <= 10 || wr.Height <= 10))
+            {
+                return true;
+            }
+
             string processName = GetProcessName(hWnd);
 
             candidates.Add(new OpenWindowCandidate(hWnd, processName, className, title, zOrder++));
@@ -584,6 +663,7 @@ public sealed class SceneService : ISceneService
 
             windows.Add(new SceneWindow
             {
+                Handle = hWnd.ToInt64(),
                 ProcessName = processName,
                 ClassName = className,
                 TitleHint = titleHint,
@@ -766,8 +846,20 @@ public sealed class SceneService : ISceneService
                 state = SceneWindowState.Normal;
             }
 
+            // Whenever the user assigns a non-fullscreen zone (e.g. Left Half, Right Half, Quarter),
+            // force state to "normal" so ApplyScene never maximizes the window to 100%!
+            if (state == SceneWindowState.Maximized && (clampedRect.W < 0.98 || clampedRect.H < 0.98))
+            {
+                state = SceneWindowState.Normal;
+            }
+
+            long? resolvedHandle = (input.Handle.HasValue && input.Handle.Value != 0)
+                ? input.Handle.Value
+                : liveMatch?.Handle;
+
             result.Add(new SceneWindow
             {
+                Handle = resolvedHandle,
                 ProcessName = processName,
                 ClassName = className,
                 TitleHint = titleHint,
@@ -995,7 +1087,7 @@ public sealed class SceneService : ISceneService
     private static SceneSummaryDto ToSummaryDto(Scene scene)
     {
         var windowSummaries = scene.Windows
-            .Select(w => new SceneWindowSummaryDto(w.ProcessName, w.Rect, w.State, w.TitleHint, w.ExecutablePath, w.ClassName))
+            .Select(w => new SceneWindowSummaryDto(w.ProcessName, w.Rect, w.State, w.TitleHint, w.ExecutablePath, w.ClassName, w.Handle))
             .ToList();
 
         return new SceneSummaryDto(

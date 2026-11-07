@@ -22,13 +22,14 @@ import { WaveViewModelStore } from '../../core/services/wave-view-model.store';
       aria-labelledby="wave-settings-title">
       <!-- Backdrop -->
       <div
-        class="fixed inset-0 bg-background/70 backdrop-blur-sm transition-opacity"
+        class="fixed inset-0 bg-[#05070d]/90 transition-opacity"
         (click)="close()"
         aria-hidden="true"></div>
 
       <!-- Slide-over Sheet -->
       <aside
-        class="relative z-10 flex h-full w-full flex-col justify-between overflow-y-auto border-l border-glass-border glass-strong p-6 text-foreground shadow-2xl sm:max-w-md">
+        (wheel)="$event.stopPropagation()"
+        class="relative z-10 flex h-full w-full flex-col justify-between overflow-y-auto border-l border-slate-700 bg-[#0d111a] p-6 text-foreground shadow-2xl sm:max-w-md">
         <div class="space-y-6">
           <!-- Sheet Header -->
           <div class="flex items-start justify-between gap-4">

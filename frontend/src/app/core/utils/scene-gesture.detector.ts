@@ -50,7 +50,10 @@ export function isThumbTucked(landmarks: HandLandmarks): boolean {
   const thumbToMiddleMcp = euclideanDistance2D(thumbTip, middleMcp);
   const thumbToIndexMcp = euclideanDistance2D(thumbTip, indexMcp);
 
-  return thumbToMiddleMcp < handScale * 0.60 || thumbToIndexMcp < handScale * 0.50;
+  // Relaxed threshold so users can naturally fold or rest their thumb without contorting
+  // it into a false pinch against the index finger, while still rejecting wide-open palms
+  // where thumbToMiddleMcp is > 1.0 * handScale.
+  return thumbToMiddleMcp < handScale * 0.85 || thumbToIndexMcp < handScale * 0.65;
 }
 
 /**
@@ -109,6 +112,7 @@ export interface SceneGestureDetectorOptions {
 export class SceneGestureDetector {
   private activeFingers: 3 | 4 | null = null;
   private holdStartTimeMs = 0;
+  private lastValidPoseTimeMs = -Infinity;
   private lastTriggerTimeMs = -Infinity;
 
   constructor(private options: SceneGestureDetectorOptions = {}) {}
@@ -120,6 +124,7 @@ export class SceneGestureDetector {
   reset(): void {
     this.activeFingers = null;
     this.holdStartTimeMs = 0;
+    this.lastValidPoseTimeMs = -Infinity;
   }
 
   update(
@@ -130,7 +135,9 @@ export class SceneGestureDetector {
   ): SceneGestureResult {
     const holdMs = this.options.holdMs ?? 600;
     const cooldownMs = this.options.cooldownMs ?? 1500;
-    const maxVelocity = this.options.maxVelocity ?? 0.018;
+    // Note: GestureEngine computes velocity in normalized screen units PER SECOND (dist / dtSec).
+    // Normal webcam stillness has 0.10 - 0.90 units/sec of sensor jitter; rapid swipes exceed 1.8.
+    const maxVelocity = this.options.maxVelocity ?? 1.8;
 
     // Cooldown check
     const timeSinceLastTrigger = nowMs - this.lastTriggerTimeMs;
@@ -142,7 +149,7 @@ export class SceneGestureDetector {
       return { fingers: null, progress: 0, triggered: false, cooldownActive: isCooldown };
     }
 
-    // Hand must be relatively still
+    // Hand must not be swiping rapidly across the frame
     if (velocity > maxVelocity) {
       this.reset();
       return { fingers: null, progress: 0, triggered: false, cooldownActive: isCooldown };
@@ -150,9 +157,17 @@ export class SceneGestureDetector {
 
     const detectedFingers = classifyScenePose(landmarks);
     if (detectedFingers === null) {
+      // Allow up to 120ms flicker grace if MediaPipe drops a frame while holding a pose
+      if (this.activeFingers !== null && nowMs - this.lastValidPoseTimeMs <= 120 && !isCooldown) {
+        const elapsed = nowMs - this.holdStartTimeMs;
+        const progress = Math.min(0.99, elapsed / Math.max(1, holdMs));
+        return { fingers: this.activeFingers, progress, triggered: false, cooldownActive: false };
+      }
       this.reset();
       return { fingers: null, progress: 0, triggered: false, cooldownActive: isCooldown };
     }
+
+    this.lastValidPoseTimeMs = nowMs;
 
     if (isCooldown) {
       this.reset();

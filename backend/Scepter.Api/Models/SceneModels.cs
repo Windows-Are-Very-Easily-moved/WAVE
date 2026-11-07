@@ -18,6 +18,7 @@ public sealed record WindowFractionalRect(
 
 public sealed class SceneWindow
 {
+    public long? Handle { get; set; }
     public string ProcessName { get; set; } = string.Empty;
     public string ClassName { get; set; } = string.Empty;
     public string TitleHint { get; set; } = string.Empty;
@@ -78,7 +79,8 @@ public sealed record SceneWindowSummaryDto(
     string State,
     string? TitleHint = null,
     string? ExecutablePath = null,
-    string? ClassName = null
+    string? ClassName = null,
+    long? Handle = null
 );
 
 public sealed record SceneSummaryDto(
