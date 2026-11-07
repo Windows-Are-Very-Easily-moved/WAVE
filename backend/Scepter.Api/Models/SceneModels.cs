@@ -88,3 +88,4 @@ public sealed record FailedWindowInfo(
     string? TitleHint,
     string Reason
 );
+

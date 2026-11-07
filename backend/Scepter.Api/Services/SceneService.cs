@@ -182,24 +182,253 @@ public sealed class SceneService : ISceneService
 
     public SceneApplyResult? ApplyScene(Guid id)
     {
-        // Phase 2 will implement full matching and restoration.
-        // For Phase 1 baseline, returns clean summary.
+        var sw = Stopwatch.StartNew();
         var scene = GetSceneById(id);
         if (scene == null) return null;
 
+        var restored = new List<RestoredWindowInfo>();
+        var missing = new List<MissingWindowInfo>();
+        var failed = new List<FailedWindowInfo>();
+
+        if (!OperatingSystem.IsWindows())
+        {
+            return new SceneApplyResult(
+                Scene: ToSummaryDto(scene),
+                Restored: restored,
+                Missing: missing,
+                Failed: new[] { new FailedWindowInfo("all", "all", null, "Win32 actions only supported on Windows.") },
+                DurationMs: sw.ElapsedMilliseconds
+            );
+        }
+
+        var candidates = GetOpenCandidateWindows();
+        var matchResult = SceneMatcher.MatchWindows(scene.Windows, candidates);
+
+        var monitors = GetAvailableMonitors();
+
+        // 1. Snapshot current layout of matched windows for 1-level undo
+        lock (_undoLock)
+        {
+            _lastApplySnapshot = new List<(IntPtr Hwnd, RECT Rect, int ShowCmd)>();
+            foreach (var match in matchResult.Matched)
+            {
+                IntPtr hWnd = match.Candidate.Handle;
+                if (!NativeMethods.IsWindow(hWnd)) continue;
+
+                var placement = WINDOWPLACEMENT.Create();
+                int showCmd = NativeMethods.SW_SHOWNORMAL;
+                if (SceneNativeMethods.GetWindowPlacement(hWnd, ref placement))
+                {
+                    showCmd = placement.showCmd;
+                }
+
+                RECT currentRect = placement.rcNormalPosition;
+                if (NativeMethods.GetWindowRect(hWnd, out RECT wr) && wr.Width > 0 && wr.Height > 0)
+                {
+                    currentRect = wr;
+                }
+
+                _lastApplySnapshot.Add((hWnd, currentRect, showCmd));
+            }
+        }
+
+        var successfullyPlaced = new List<(IntPtr Hwnd, int ZOrder)>();
+
+        // 2. Position matched windows
+        foreach (var match in matchResult.Matched)
+        {
+            IntPtr hWnd = match.Candidate.Handle;
+            var target = match.Target;
+
+            if (!NativeMethods.IsWindow(hWnd))
+            {
+                missing.Add(new MissingWindowInfo(target.ProcessName, target.ClassName, target.TitleHint));
+                continue;
+            }
+
+            if (_tracker.IsProtectedOrInvalidWindow(hWnd) || _tracker.IsSelfWindow(hWnd))
+            {
+                failed.Add(new FailedWindowInfo(target.ProcessName, target.ClassName, target.TitleHint, "Protected or self window."));
+                continue;
+            }
+
+            try
+            {
+                // Restore first so SetWindowPos and coordinates apply cleanly
+                if (NativeMethods.IsZoomed(hWnd) || NativeMethods.IsIconic(hWnd))
+                {
+                    NativeMethods.ShowWindow(hWnd, NativeMethods.SW_RESTORE);
+                }
+
+                var targetMonitor = SceneLayoutMath.ResolveTargetMonitor(target.MonitorDeviceName, monitors);
+                RECT desiredVisibleRect = SceneLayoutMath.FractionalToPixels(target.Rect, targetMonitor.WorkArea);
+
+                // Compensate invisible resize borders
+                RECT compensatedRect = desiredVisibleRect;
+                if (NativeMethods.GetWindowRect(hWnd, out RECT currentRect))
+                {
+                    int hr = NativeMethods.DwmGetWindowAttribute(
+                        hWnd,
+                        NativeMethods.DWMWA_EXTENDED_FRAME_BOUNDS,
+                        out RECT frameBounds,
+                        Marshal.SizeOf<RECT>());
+
+                    if (hr == 0)
+                    {
+                        compensatedRect = SnapCalculator.CompensateInvisibleBorders(desiredVisibleRect, currentRect, frameBounds);
+                    }
+                }
+
+                uint flags = NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_NOZORDER | NativeMethods.SWP_SHOWWINDOW;
+                bool moved = NativeMethods.SetWindowPos(
+                    hWnd,
+                    IntPtr.Zero,
+                    compensatedRect.Left,
+                    compensatedRect.Top,
+                    compensatedRect.Width,
+                    compensatedRect.Height,
+                    flags);
+
+                if (!moved)
+                {
+                    int err = Marshal.GetLastWin32Error();
+                    failed.Add(new FailedWindowInfo(target.ProcessName, target.ClassName, target.TitleHint, $"SetWindowPos failed (Win32 error: {err}). Window may be elevated."));
+                    continue;
+                }
+
+                // Apply maximized or minimized state if saved
+                if (string.Equals(target.State, SceneWindowState.Maximized, StringComparison.OrdinalIgnoreCase))
+                {
+                    NativeMethods.ShowWindow(hWnd, NativeMethods.SW_SHOWMAXIMIZED);
+                }
+                else if (string.Equals(target.State, SceneWindowState.Minimized, StringComparison.OrdinalIgnoreCase))
+                {
+                    NativeMethods.ShowWindow(hWnd, NativeMethods.SW_SHOWMINIMIZED);
+                }
+
+                successfullyPlaced.Add((hWnd, target.ZOrder));
+                restored.Add(new RestoredWindowInfo(target.ProcessName, target.ClassName, target.TitleHint, target.Rect));
+            }
+            catch (Exception ex)
+            {
+                failed.Add(new FailedWindowInfo(target.ProcessName, target.ClassName, target.TitleHint, ex.Message));
+            }
+        }
+
+        // 3. Apply Z-Order back-to-front without focus stealing (SWP_NOACTIVATE)
+        foreach (var item in successfullyPlaced.OrderByDescending(p => p.ZOrder))
+        {
+            NativeMethods.SetWindowPos(
+                item.Hwnd,
+                NativeMethods.HWND_TOP,
+                0, 0, 0, 0,
+                NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE);
+        }
+
+        // 4. Missing windows
+        foreach (var miss in matchResult.Missing)
+        {
+            missing.Add(new MissingWindowInfo(miss.ProcessName, miss.ClassName, miss.TitleHint));
+        }
+
+        sw.Stop();
+        _logger.LogInformation("Applied scene '{SceneName}' (ID: {SceneId}) in {ElapsedMs}ms. Restored: {RestoredCount}, Missing: {MissingCount}, Failed: {FailedCount}.",
+            scene.Name, scene.Id, sw.ElapsedMilliseconds, restored.Count, missing.Count, failed.Count);
+
         return new SceneApplyResult(
             Scene: ToSummaryDto(scene),
-            Restored: Array.Empty<RestoredWindowInfo>(),
-            Missing: Array.Empty<MissingWindowInfo>(),
-            Failed: Array.Empty<FailedWindowInfo>(),
-            DurationMs: 0
+            Restored: restored,
+            Missing: missing,
+            Failed: failed,
+            DurationMs: sw.ElapsedMilliseconds
         );
     }
 
     public bool UndoLastApply()
     {
-        // Phase 2 will implement full undo restoration.
-        return false;
+        if (!OperatingSystem.IsWindows()) return false;
+
+        List<(IntPtr Hwnd, RECT Rect, int ShowCmd)> snapshot;
+        lock (_undoLock)
+        {
+            if (_lastApplySnapshot == null || _lastApplySnapshot.Count == 0)
+            {
+                return false;
+            }
+            snapshot = new List<(IntPtr Hwnd, RECT Rect, int ShowCmd)>(_lastApplySnapshot);
+            _lastApplySnapshot = null;
+        }
+
+        int restoredCount = 0;
+        foreach (var item in snapshot)
+        {
+            if (!NativeMethods.IsWindow(item.Hwnd)) continue;
+
+            if (NativeMethods.IsZoomed(item.Hwnd) || NativeMethods.IsIconic(item.Hwnd))
+            {
+                NativeMethods.ShowWindow(item.Hwnd, NativeMethods.SW_RESTORE);
+            }
+
+            uint flags = NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_NOZORDER | NativeMethods.SWP_SHOWWINDOW;
+            NativeMethods.SetWindowPos(
+                item.Hwnd,
+                IntPtr.Zero,
+                item.Rect.Left,
+                item.Rect.Top,
+                item.Rect.Width,
+                item.Rect.Height,
+                flags);
+
+            if (item.ShowCmd == NativeMethods.SW_SHOWMAXIMIZED)
+            {
+                NativeMethods.ShowWindow(item.Hwnd, NativeMethods.SW_SHOWMAXIMIZED);
+            }
+            else if (item.ShowCmd == NativeMethods.SW_SHOWMINIMIZED)
+            {
+                NativeMethods.ShowWindow(item.Hwnd, NativeMethods.SW_SHOWMINIMIZED);
+            }
+
+            restoredCount++;
+        }
+
+        _logger.LogInformation("Undid last scene apply, restored {Count} window(s) to previous layout.", restoredCount);
+        return restoredCount > 0;
+    }
+
+    private List<OpenWindowCandidate> GetOpenCandidateWindows()
+    {
+        var candidates = new List<OpenWindowCandidate>();
+        if (!OperatingSystem.IsWindows()) return candidates;
+
+        int zOrder = 0;
+        NativeMethods.EnumInteractiveWindows((hWnd, _) =>
+        {
+            if (hWnd == IntPtr.Zero || !NativeMethods.IsWindow(hWnd)) return true;
+            if (!NativeMethods.IsWindowVisible(hWnd) && !NativeMethods.IsIconic(hWnd)) return true;
+            if (NativeMethods.IsWindowCloaked(hWnd)) return true;
+            if (_tracker.IsSelfWindow(hWnd)) return true;
+
+            int exStyle = SceneNativeMethods.GetWindowLong(hWnd, NativeMethods.GWL_EXSTYLE);
+            if ((exStyle & NativeMethods.WS_EX_TOOLWINDOW) != 0) return true;
+
+            string className = NativeMethods.GetWindowClass(hWnd);
+            if (string.IsNullOrWhiteSpace(className) ||
+                string.Equals(className, "Progman", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(className, "Shell_TrayWnd", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(className, "Shell_SecondaryTrayWnd", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(className, "WorkerW", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            string title = NativeMethods.GetWindowTitle(hWnd);
+            string processName = GetProcessName(hWnd);
+
+            candidates.Add(new OpenWindowCandidate(hWnd, processName, className, title, zOrder++));
+            return true;
+        });
+
+        return candidates;
     }
 
     // --- Internal Capture Logic ---

@@ -117,3 +117,4 @@ public sealed class SceneLayoutMathTests
         Assert.Equal(1920, emptyFallback.WorkArea.Width);
     }
 }
+

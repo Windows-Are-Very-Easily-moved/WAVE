@@ -13,3 +13,4 @@ public interface ISceneService
     bool UndoLastApply();
     bool HasUndo { get; }
 }
+
