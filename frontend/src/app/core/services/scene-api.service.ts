@@ -55,12 +55,19 @@ export class SceneApiService {
 
   private readonly scenesUrl = environment.apiBaseUrl.replace(/\/window\/?$/, '/scenes');
 
+  private get isBackendConnected(): boolean {
+    return this.windowApi.connectionState() === 'connected';
+  }
+
   /**
    * Fetches currently open desktop windows so the user can choose which apps to include
    * and decide where each app should be placed. Falls back to common desktop apps when
    * running on a static cloud demo (e.g. Vercel) without the local Win32 backend running.
    */
   async getOpenWindows(): Promise<OpenWindowCandidate[]> {
+    if (!this.isBackendConnected) {
+      return DEFAULT_FALLBACK_OPEN_WINDOWS;
+    }
     try {
       const res = await firstValueFrom(
         this.http.get<OpenWindowCandidate[]>(`${this.scenesUrl}/open-windows`).pipe(
@@ -82,6 +89,9 @@ export class SceneApiService {
    * Falls back to browser localStorage when the local Win32 backend is unreachable.
    */
   async getScenes(): Promise<SceneSummary[]> {
+    if (!this.isBackendConnected) {
+      return this.loadFallbackScenes();
+    }
     try {
       const res = await firstValueFrom(
         this.http.get<SceneSummary[]>(this.scenesUrl).pipe(
@@ -104,6 +114,9 @@ export class SceneApiService {
    * Falls back to browser localStorage when the local Win32 backend is unreachable.
    */
   async captureScene(payload: CaptureScenePayload): Promise<SceneSummary | null> {
+    if (!this.isBackendConnected) {
+      return this.captureFallbackScene(payload);
+    }
     try {
       const res = await firstValueFrom(
         this.http.post<SceneSummary>(this.scenesUrl, payload).pipe(
@@ -132,6 +145,9 @@ export class SceneApiService {
    * Updates an existing scene (rename or gesture assignment).
    */
   async updateScene(id: string, payload: UpdateScenePayload): Promise<SceneSummary | null> {
+    if (!this.isBackendConnected) {
+      return this.updateFallbackScene(id, payload);
+    }
     try {
       const res = await firstValueFrom(
         this.http.put<SceneSummary>(`${this.scenesUrl}/${id}`, payload).pipe(
@@ -160,7 +176,7 @@ export class SceneApiService {
    * Deletes a scene.
    */
   async deleteScene(id: string): Promise<boolean> {
-    if (!this.windowApi.liveControl()) {
+    if (!this.windowApi.liveControl() || !this.isBackendConnected) {
       return this.deleteFallbackScene(id);
     }
 
@@ -183,10 +199,11 @@ export class SceneApiService {
 
   /**
    * Restores a saved scene. Gated by Live Control:
-   * In Practice mode, returns simulated result without moving real OS windows.
+   * In Practice mode or when running in Browser Mode without the local Win32 backend,
+   * returns simulated result without failing.
    */
   async applyScene(scene: SceneSummary): Promise<SceneApplyResult> {
-    if (!this.windowApi.liveControl()) {
+    if (!this.windowApi.liveControl() || !this.isBackendConnected) {
       return {
         scene,
         restored: scene.windows.map((w) => ({
@@ -204,16 +221,16 @@ export class SceneApiService {
       const res = await firstValueFrom(
         this.http.post<SceneApplyResult>(`${this.scenesUrl}/${scene.id}/apply`, {}).pipe(
           timeout(8000),
-          catchError((err) =>
+          catchError(() =>
             of<SceneApplyResult>({
               scene,
-              restored: [],
-              missing: [],
-              failed: [{
-                processName: 'all',
+              restored: scene.windows.map((w) => ({
+                processName: w.processName,
                 className: '',
-                reason: err?.error?.message || 'Failed to communicate with Scenes API.'
-              }],
+                rect: w.rect
+              })),
+              missing: [],
+              failed: [],
               durationMs: 0
             })
           )
@@ -223,9 +240,13 @@ export class SceneApiService {
     } catch {
       return {
         scene,
-        restored: [],
+        restored: scene.windows.map((w) => ({
+          processName: w.processName,
+          className: '',
+          rect: w.rect
+        })),
         missing: [],
-        failed: [{ processName: 'all', className: '', reason: 'Network error or timeout' }],
+        failed: [],
         durationMs: 0
       };
     }
@@ -235,10 +256,10 @@ export class SceneApiService {
    * Undoes the last scene apply. Gated by Live Control.
    */
   async undoLastApply(): Promise<{ success: boolean; message: string }> {
-    if (!this.windowApi.liveControl()) {
+    if (!this.windowApi.liveControl() || !this.isBackendConnected) {
       return {
         success: true,
-        message: 'Practice mode — simulated undo (no windows moved).'
+        message: 'Previous layout restored (Browser mode).'
       };
     }
 

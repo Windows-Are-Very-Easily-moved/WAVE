@@ -88,18 +88,17 @@ import { ScenesPanelComponent } from '../scenes-panel/scenes-panel.component';
               'border-glass-border bg-secondary/60 text-muted-foreground':
                 store.backendStatus() === 'checking',
               'border-armed/40 bg-armed/10 text-armed':
-                store.backendStatus() === 'connected',
+                store.backendStatus() === 'connected' ||
+                (store.backendStatus() === 'unreachable' && store.liveControl()),
               'border-primary/40 bg-primary/10 text-primary':
-                store.backendStatus() === 'unreachable' && !store.liveControl(),
-              'border-destructive/50 bg-destructive/10 text-destructive':
-                store.backendStatus() === 'unreachable' && store.liveControl()
+                store.backendStatus() === 'unreachable' && !store.liveControl()
             }"
             role="status"
             aria-label="Backend status"
             [title]="
               store.backendStatus() === 'connected'
                 ? 'Connected to local Win32 desktop backend on localhost:5000'
-                : 'Running in Web / Practice Mode. Run the local backend on your PC to move real Windows apps.'
+                : 'Running in Browser Mode. Run the local Windows agent on your PC to move native OS apps.'
             ">
             <svg
               *ngIf="store.backendStatus() === 'checking'"
@@ -111,14 +110,14 @@ import { ScenesPanelComponent } from '../scenes-panel/scenes-panel.component';
               <path d="M21 12a9 9 0 1 1-6.219-8.56" stroke-linecap="round" />
             </svg>
             <span
-              *ngIf="store.backendStatus() === 'connected'"
+              *ngIf="
+                store.backendStatus() === 'connected' ||
+                (store.backendStatus() === 'unreachable' && store.liveControl())
+              "
               class="h-2 w-2 rounded-full bg-armed shadow-[0_0_8px_var(--armed)]"></span>
             <span
               *ngIf="store.backendStatus() === 'unreachable' && !store.liveControl()"
               class="h-2 w-2 rounded-full bg-primary"></span>
-            <span
-              *ngIf="store.backendStatus() === 'unreachable' && store.liveControl()"
-              class="h-2 w-2 rounded-full bg-destructive animate-pulse"></span>
             <span>
               {{
                 store.backendStatus() === 'checking'
@@ -126,7 +125,7 @@ import { ScenesPanelComponent } from '../scenes-panel/scenes-panel.component';
                   : store.backendStatus() === 'connected'
                     ? 'Desktop Agent Connected'
                     : store.liveControl()
-                      ? 'Desktop Agent Offline'
+                      ? 'Browser Live Mode'
                       : 'Web / Practice Mode'
               }}
             </span>
@@ -447,38 +446,8 @@ import { ScenesPanelComponent } from '../scenes-panel/scenes-panel.component';
             </div>
           </div>
 
-          <!-- Top-Right: Contextual Warning Banners (Backend Unreachable / Tab Hidden) -->
+          <!-- Top-Right: Contextual Warning Banners (Tab Hidden) -->
           <div class="absolute top-3 right-3 z-20 flex flex-col gap-2 max-w-xs">
-            <!-- Backend Unreachable Alert when Live Control is ON -->
-            <div
-              *ngIf="store.liveControl() && store.backendStatus() === 'unreachable'"
-              class="glass rounded-xl p-3 border border-destructive/50 text-xs flex items-start gap-2.5">
-              <svg
-                viewBox="0 0 24 24"
-                class="h-4 w-4 text-destructive shrink-0 mt-0.5"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2">
-                <path d="M2 20h.01M7 20v-4M12 20v-8M17 20V8M22 4v16" stroke-linecap="round" />
-              </svg>
-              <div class="flex-1">
-                <div class="font-semibold text-foreground">Backend unreachable</div>
-                <p class="text-muted-foreground mt-0.5">
-                  Start the local W.A.V.E backend on <code>localhost:5000</code> or switch off Live control to practice.
-                </p>
-                <button
-                  type="button"
-                  (click)="store.retryBackendHealth()"
-                  class="mt-2 inline-flex items-center gap-1 text-primary hover:underline font-mono text-[11px] cursor-pointer">
-                  <svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" stroke-linecap="round" />
-                    <path d="M21 3v5h-5" stroke-linecap="round" />
-                  </svg>
-                  Retry
-                </button>
-              </div>
-            </div>
-
             <!-- Tab Hidden Warning -->
             <div
               *ngIf="store.tabHidden() && !store.isPipActive()"

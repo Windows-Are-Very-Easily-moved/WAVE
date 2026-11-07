@@ -60,13 +60,13 @@ export class WindowApiService {
     const startLoop = () => {
       void this.checkHealthAndActiveWindow();
       this.pollHandle = setInterval(() => {
-        // When hosted on a remote domain (e.g. *.vercel.app) and Live Control is OFF,
-        // avoid spamming localhost:5000 every 3 seconds in the browser console.
+        // When hosted on a remote domain (e.g. *.vercel.app), only poll continuously if the local
+        // desktop agent is actually connected, avoiding repeated ERR_CONNECTION_REFUSED logs on visitor machines.
         const isLocalhost =
           typeof window === 'undefined' ||
           window.location.hostname === 'localhost' ||
           window.location.hostname === '127.0.0.1';
-        if (isLocalhost || this.liveControl() || this.connectionState() === 'connected') {
+        if (isLocalhost || this.connectionState() === 'connected') {
           void this.checkHealthAndActiveWindow();
         }
       }, 3000);
@@ -129,12 +129,14 @@ export class WindowApiService {
   }
 
   async grabWindow(payload: GrabPayload): Promise<SnapResult | null> {
-    if (!this.liveControl()) {
+    if (!this.liveControl() || this.connectionState() !== 'connected') {
       const practiceRes: SnapResult = {
         success: true,
-        windowTitle: this.activeWindow()?.title || 'Practice Window',
+        windowTitle: this.activeWindow()?.title || 'Browser Window',
         appliedRect: null,
-        message: 'Practice grab (Live control off).'
+        message: this.liveControl()
+          ? 'Browser mode grab (no local desktop agent).'
+          : 'Practice grab (Live control off).'
       };
       this.lastSnapResult.set(practiceRes);
       return practiceRes;
@@ -162,7 +164,7 @@ export class WindowApiService {
   }
 
   async moveWindow(payload: MovePayload): Promise<SnapResult | null> {
-    if (!this.liveControl() || this.moveInFlight) {
+    if (!this.liveControl() || this.connectionState() !== 'connected' || this.moveInFlight) {
       return null;
     }
 
@@ -182,12 +184,14 @@ export class WindowApiService {
   }
 
   async snapWindow(payload: SnapPayload): Promise<SnapResult | null> {
-    if (!this.liveControl()) {
+    if (!this.liveControl() || this.connectionState() !== 'connected') {
       const practiceRes: SnapResult = {
         success: true,
-        windowTitle: this.activeWindow()?.title || 'Practice Window',
+        windowTitle: this.activeWindow()?.title || 'Browser Window',
         appliedRect: null,
-        message: `Practice snap ${payload.position} (Live control off).`
+        message: this.liveControl()
+          ? `Snapped ${payload.position} (Browser mode).`
+          : `Practice snap ${payload.position} (Live control off).`
       };
       this.lastSnapResult.set(practiceRes);
       return practiceRes;
@@ -216,12 +220,12 @@ export class WindowApiService {
   }
 
   async resizeWindow(payload: ResizePayload): Promise<SnapResult | null> {
-    if (!this.liveControl()) {
+    if (!this.liveControl() || this.connectionState() !== 'connected') {
       const practiceRes: SnapResult = {
         success: true,
-        windowTitle: this.activeWindow()?.title || 'Practice Window',
+        windowTitle: this.activeWindow()?.title || 'Browser Window',
         appliedRect: null,
-        message: `Practice resize ${payload.scaleFactor.toFixed(2)}x (Live control off).`
+        message: `Resized ${payload.scaleFactor.toFixed(2)}x`
       };
       this.lastSnapResult.set(practiceRes);
       return practiceRes;
@@ -244,12 +248,12 @@ export class WindowApiService {
   }
 
   async cycleWindow(payload: CyclePayload): Promise<SnapResult | null> {
-    if (!this.liveControl()) {
+    if (!this.liveControl() || this.connectionState() !== 'connected') {
       const practiceRes: SnapResult = {
         success: true,
-        windowTitle: this.activeWindow()?.title || 'Practice Window',
+        windowTitle: this.activeWindow()?.title || 'Browser Window',
         appliedRect: null,
-        message: `Practice cycle ${payload.direction} (Live control off).`
+        message: `Switched window (${payload.direction})`
       };
       this.lastSnapResult.set(practiceRes);
       return practiceRes;
@@ -273,7 +277,7 @@ export class WindowApiService {
   }
 
   async scrollInput(payload: ScrollPayload): Promise<ScrollResponse | null> {
-    if (!this.liveControl()) {
+    if (!this.liveControl() || this.connectionState() !== 'connected') {
       return { success: true };
     }
 
