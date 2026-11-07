@@ -68,6 +68,7 @@ builder.Services.AddSingleton<ForegroundTracker>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ForegroundTracker>());
 builder.Services.AddSingleton<IWindowService, WindowService>();
 builder.Services.AddSingleton<IInputService, InputService>();
+builder.Services.AddSingleton<ISceneService, SceneService>();
 
 var app = builder.Build();
 
