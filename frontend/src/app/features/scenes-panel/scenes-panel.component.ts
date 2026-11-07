@@ -38,218 +38,709 @@ export interface ConfigurableSceneAppItem {
   selector: 'app-scenes-panel',
   standalone: true,
   imports: [CommonModule, FormsModule],
+  styles: [
+    `
+      .scenes-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 90;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        background: rgba(5, 8, 15, 0.92);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+      }
+
+      .scenes-dialog {
+        position: relative;
+        z-index: 95;
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        max-width: 780px;
+        max-height: 84vh;
+        background: #0d121d;
+        color: #f8fafc;
+        border: 1px solid #2e3a52;
+        border-radius: 20px;
+        box-shadow: 0 28px 70px rgba(0, 0, 0, 0.95), 0 0 0 1px rgba(255, 255, 255, 0.06);
+        overflow: hidden;
+        user-select: none;
+      }
+
+      .scenes-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 16px 22px;
+        background: #131b2b;
+        border-bottom: 1px solid #263147;
+        flex-shrink: 0;
+        flex-wrap: wrap;
+      }
+
+      .scenes-header-title-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .scenes-icon-box {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        border-radius: 12px;
+        background: rgba(245, 196, 81, 0.15);
+        border: 1px solid rgba(245, 196, 81, 0.45);
+        color: #f5c451;
+        flex-shrink: 0;
+      }
+
+      .scenes-title {
+        font-size: 18px;
+        font-weight: 700;
+        color: #ffffff;
+        margin: 0;
+        line-height: 1.2;
+      }
+
+      .scenes-subtitle {
+        font-size: 12px;
+        color: #94a3b8;
+        margin: 3px 0 0 0;
+      }
+
+      .scenes-count-pill {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-family: var(--font-mono, monospace);
+        font-size: 11px;
+        font-weight: 600;
+        background: #1e293b;
+        border: 1px solid #334155;
+        color: #f5c451;
+        margin-left: 8px;
+      }
+
+      .scenes-status-banner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 22px;
+        font-size: 12px;
+        flex-shrink: 0;
+        border-bottom: 1px solid #263147;
+      }
+
+      .scenes-status-live {
+        background: #0c291e;
+        color: #6ee7b7;
+      }
+
+      .scenes-status-practice {
+        background: #2b1f0c;
+        color: #fcd34d;
+      }
+
+      .scenes-body {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 20px 22px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        background: #0d121d;
+      }
+
+      .scenes-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 22px;
+        background: #131b2b;
+        border-top: 1px solid #263147;
+        flex-shrink: 0;
+        flex-wrap: wrap;
+      }
+
+      /* Buttons */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        border-radius: 10px;
+        padding: 8px 14px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        border: 1px solid transparent;
+        line-height: 1.2;
+      }
+
+      .btn:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
+      .btn-gold {
+        background: #f5c451;
+        color: #0b0f19;
+        border-color: #f5c451;
+        font-weight: 700;
+      }
+
+      .btn-gold:hover:not(:disabled) {
+        background: #fbd36b;
+      }
+
+      .btn-secondary {
+        background: #1e293b;
+        color: #e2e8f0;
+        border-color: #334155;
+      }
+
+      .btn-secondary:hover:not(:disabled) {
+        background: #283548;
+        border-color: #475569;
+        color: #ffffff;
+      }
+
+      .btn-danger {
+        background: rgba(239, 68, 68, 0.14);
+        color: #fca5a5;
+        border-color: rgba(239, 68, 68, 0.35);
+      }
+
+      .btn-danger:hover:not(:disabled) {
+        background: rgba(239, 68, 68, 0.25);
+        color: #fecaca;
+      }
+
+      .btn-close {
+        width: 34px;
+        height: 34px;
+        padding: 0;
+        border-radius: 10px;
+        background: #1e293b;
+        color: #cbd5e1;
+        border: 1px solid #334155;
+        font-size: 15px;
+        cursor: pointer;
+      }
+
+      .btn-close:hover {
+        background: #334155;
+        color: #ffffff;
+      }
+
+      /* Saved Scene Card */
+      .scene-card {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        padding: 16px 18px;
+        background: #151e30;
+        border: 1px solid #2b3954;
+        border-radius: 14px;
+      }
+
+      .scene-card:hover {
+        border-color: #43567d;
+      }
+
+      .scene-card-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+      }
+
+      .scene-badge-gesture {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 3px 10px;
+        border-radius: 999px;
+        font-family: var(--font-mono, monospace);
+        font-size: 11px;
+        font-weight: 700;
+        background: #0d3326;
+        color: #6ee7b7;
+        border: 1px solid #10b981;
+      }
+
+      .scene-badge-none {
+        display: inline-flex;
+        align-items: center;
+        padding: 3px 10px;
+        border-radius: 999px;
+        font-family: var(--font-mono, monospace);
+        font-size: 11px;
+        background: #1e293b;
+        color: #94a3b8;
+        border: 1px solid #334155;
+      }
+
+      .scene-app-pill-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .scene-app-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 10px;
+        border-radius: 8px;
+        background: #0b101b;
+        border: 1px solid #28354e;
+        font-size: 12px;
+        color: #e2e8f0;
+      }
+
+      .scene-minimap {
+        position: relative;
+        width: 128px;
+        height: 74px;
+        border-radius: 10px;
+        background: #080b12;
+        border: 1px solid #334155;
+        overflow: hidden;
+        flex-shrink: 0;
+      }
+
+      .scene-card-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding-top: 12px;
+        border-top: 1px solid #232f46;
+        flex-wrap: wrap;
+      }
+
+      /* Empty State */
+      .scenes-empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 36px 24px;
+        background: #131b2b;
+        border: 1px dashed #334155;
+        border-radius: 16px;
+        gap: 12px;
+      }
+
+      /* Editor Step Sections */
+      .step-box {
+        background: #141c2c;
+        border: 1px solid #293650;
+        border-radius: 14px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .step-label {
+        font-family: var(--font-mono, monospace);
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #f5c451;
+        margin: 0;
+      }
+
+      .text-input {
+        width: 100%;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: #090d16;
+        border: 1px solid #334155;
+        color: #ffffff;
+        font-size: 13px;
+        font-weight: 500;
+        outline: none;
+      }
+
+      .text-input:focus {
+        border-color: #f5c451;
+      }
+
+      .gesture-choice-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+      }
+
+      .gesture-choice-btn {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        padding: 10px 8px;
+        border-radius: 10px;
+        background: #090d16;
+        border: 1px solid #2e3c56;
+        color: #cbd5e1;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 600;
+        transition: all 0.15s ease;
+      }
+
+      .gesture-choice-btn:hover:not(:disabled) {
+        border-color: #64748b;
+        color: #ffffff;
+      }
+
+      .gesture-choice-btn.active {
+        background: #0d3326;
+        border-color: #10b981;
+        color: #6ee7b7;
+      }
+
+      .gesture-choice-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+
+      /* Live Screen Preview Box */
+      .screen-preview-frame {
+        position: relative;
+        width: 100%;
+        height: 115px;
+        border-radius: 12px;
+        background: #080b12;
+        border: 2px solid #2e3c56;
+        overflow: hidden;
+      }
+
+      .screen-preview-window {
+        position: absolute;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 4px;
+        border-radius: 6px;
+        text-align: center;
+        overflow: hidden;
+        transition: all 0.18s ease;
+        box-sizing: border-box;
+      }
+
+      .win-color-0 {
+        background: rgba(245, 196, 81, 0.25);
+        border: 2px solid #f5c451;
+        color: #fef08a;
+      }
+
+      .win-color-1 {
+        background: rgba(16, 185, 129, 0.25);
+        border: 2px solid #10b981;
+        color: #a7f3d0;
+      }
+
+      .win-color-2 {
+        background: rgba(56, 189, 248, 0.25);
+        border: 2px solid #38bdf8;
+        color: #bae6fd;
+      }
+
+      .win-color-3 {
+        background: rgba(217, 70, 239, 0.25);
+        border: 2px solid #d946ef;
+        color: #f5d0fe;
+      }
+
+      /* App Selection Rows */
+      .app-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 14px;
+        border-radius: 12px;
+        background: #0e1422;
+        border: 1px solid #253148;
+        flex-wrap: wrap;
+        transition: all 0.15s ease;
+      }
+
+      .app-row.selected {
+        background: #172238;
+        border-color: #f5c451;
+      }
+
+      .app-row-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 180px;
+        flex: 1 1 220px;
+        cursor: pointer;
+      }
+
+      .app-checkbox {
+        width: 18px;
+        height: 18px;
+        accent-color: #f5c451;
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+
+      .app-name {
+        font-size: 13px;
+        font-weight: 700;
+        color: #ffffff;
+      }
+
+      .app-title {
+        font-size: 11px;
+        color: #94a3b8;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 280px;
+      }
+
+      .app-row-right {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+
+      .zone-btn {
+        padding: 6px 10px;
+        border-radius: 8px;
+        font-family: var(--font-mono, monospace);
+        font-size: 11px;
+        font-weight: 600;
+        background: #090d16;
+        color: #cbd5e1;
+        border: 1px solid #2e3c56;
+        cursor: pointer;
+        transition: all 0.15s ease;
+      }
+
+      .zone-btn:hover {
+        border-color: #64748b;
+        color: #ffffff;
+      }
+
+      .zone-btn.active {
+        background: #f5c451;
+        color: #0b0f19;
+        border-color: #f5c451;
+        font-weight: 700;
+      }
+
+      .zone-select {
+        padding: 6px 10px;
+        border-radius: 8px;
+        font-family: var(--font-mono, monospace);
+        font-size: 11px;
+        background: #090d16;
+        color: #e2e8f0;
+        border: 1px solid #2e3c56;
+        cursor: pointer;
+        outline: none;
+      }
+
+      .zone-select:focus {
+        border-color: #f5c451;
+      }
+    `
+  ],
   template: `
-    <!-- UNIFIED, OPAQUE, COMPACT & SCROLLABLE SCENES DIALOG -->
     <div
       *ngIf="store.scenesOpen() || isModalOpen()"
-      class="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 select-text"
+      class="scenes-backdrop"
       role="dialog"
       aria-modal="true"
       aria-labelledby="scenes-panel-title"
-      (wheel)="$event.stopPropagation()">
-      <!-- Solid Dark Backdrop (Blocks underlying HUD & camera feed completely) -->
-      <div
-        class="fixed inset-0 bg-[#05070d]/95"
-        (click)="onBackdropClick()"
-        aria-hidden="true"></div>
+      (wheel)="$event.stopPropagation()"
+      (click)="onBackdropClick()">
 
-      <!-- Single Solid Dialog Container (Fits comfortably on screen: max-h-[82vh], max-w-2xl) -->
-      <div
-        class="relative z-10 flex max-h-[82vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-700 bg-[#0d111a] text-slate-100 shadow-[0_24px_64px_rgba(0,0,0,0.95)]">
+      <!-- Solid Opaque Dialog Card (Stop click propagation so clicking inside doesn't close) -->
+      <div class="scenes-dialog" (click)="$event.stopPropagation()">
 
         <!-- ======================= VIEW 1: SAVED SCENES LIST ======================= -->
         <ng-container *ngIf="!isModalOpen()">
-          <!-- Sticky Header -->
-          <div class="flex shrink-0 items-center justify-between gap-3 border-b border-slate-800 bg-[#111723] px-5 py-3.5">
-            <div class="flex items-center gap-3 min-w-0">
-              <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-amber-400/40 bg-amber-400/15 text-amber-300">
-                <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
+          <!-- Header -->
+          <div class="scenes-header">
+            <div class="scenes-header-title-row">
+              <div class="scenes-icon-box">
+                <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2">
                   <rect x="3" y="3" width="18" height="18" rx="2" stroke-linecap="round" />
                   <path d="M3 9h18M9 21V9" stroke-linecap="round" />
                 </svg>
               </div>
-              <div class="min-w-0">
-                <div class="flex items-center gap-2">
-                  <h2 id="scenes-panel-title" class="font-display text-base font-bold text-white">
-                    Wave Scenes
-                  </h2>
-                  <span class="rounded-md border border-slate-700 bg-[#1a2234] px-2 py-0.5 font-mono text-[11px] text-amber-300">
-                    {{ store.scenes().length }}/20
-                  </span>
+              <div>
+                <div class="flex items-center">
+                  <h2 id="scenes-panel-title" class="scenes-title">Wave Scenes</h2>
+                  <span class="scenes-count-pill">{{ store.scenes().length }} / 20</span>
                 </div>
-                <p class="truncate text-xs text-slate-400">
-                  Launch &amp; snap your favorite apps into place with a 3-finger or 4-finger gesture.
+                <p class="scenes-subtitle">
+                  Pick your apps, choose their screen side, and launch them with a 3-finger or 4-finger gesture.
                 </p>
               </div>
             </div>
 
-            <!-- Header Actions -->
-            <div class="flex shrink-0 items-center gap-2">
+            <div class="flex items-center gap-2">
               <button
                 type="button"
+                class="btn btn-secondary"
                 (click)="store.undoLastScene()"
                 [disabled]="!store.undoAvailable()"
-                class="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 font-mono text-xs transition cursor-pointer"
-                [ngClass]="
-                  store.undoAvailable()
-                    ? 'border-slate-600 bg-[#1a2234] text-slate-100 hover:border-amber-400/60'
-                    : 'border-slate-800 bg-[#131926] text-slate-500 cursor-not-allowed'
-                "
                 title="Undo last scene layout (Hotkey: U)">
-                <span>↩ Undo</span>
+                ↩ Undo
               </button>
 
               <button
                 type="button"
+                class="btn btn-gold"
                 (click)="openSaveModal()"
-                [disabled]="!store.settings().scenesEnabled"
-                class="inline-flex items-center gap-1.5 rounded-lg bg-amber-400 px-3 py-1.5 text-xs font-bold text-slate-950 shadow hover:bg-amber-300 transition cursor-pointer disabled:opacity-40">
-                <span>+ New Scene</span>
+                [disabled]="!store.settings().scenesEnabled">
+                + New Scene
               </button>
 
               <button
                 type="button"
+                class="btn-close"
                 (click)="store.toggleScenesDrawer(false)"
-                aria-label="Close Scenes panel"
-                class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-700 bg-[#1a2234] text-slate-300 hover:bg-slate-700 hover:text-white cursor-pointer transition">
+                aria-label="Close Scenes panel">
                 ✕
               </button>
             </div>
           </div>
 
-          <!-- Live Control Status Banner -->
+          <!-- Live Control Status Bar -->
           <div
-            class="flex shrink-0 items-center justify-between gap-2 border-b border-slate-800 px-5 py-2 text-xs"
-            [ngClass]="store.liveControl() ? 'bg-emerald-950/70 text-emerald-300' : 'bg-amber-950/70 text-amber-200'">
-            <div class="flex items-center gap-2">
-              <span
-                class="h-2 w-2 rounded-full"
-                [ngClass]="store.liveControl() ? 'bg-emerald-400' : 'bg-amber-400'"></span>
-              <span class="font-medium">
-                {{
-                  store.liveControl()
-                    ? 'Live Control is ON — Testing or triggering a scene will move & launch your real desktop windows.'
-                    : 'Practice Mode is ON — Turn on Live Control to actually move & launch your real windows!'
-                }}
-              </span>
-            </div>
+            class="scenes-status-banner"
+            [ngClass]="store.liveControl() ? 'scenes-status-live' : 'scenes-status-practice'">
+            <span>
+              {{
+                store.liveControl()
+                  ? '● Live Control is ON — Running a scene or holding 3/4 fingers will move & launch your real windows.'
+                  : '○ Practice Mode is ON — Turn on Live Control so scenes move your real desktop windows!'
+              }}
+            </span>
             <button
               *ngIf="!store.liveControl()"
               type="button"
-              (click)="store.setLiveControl(true)"
-              class="shrink-0 rounded-md bg-amber-400 px-2.5 py-1 font-mono text-[11px] font-bold text-slate-950 hover:bg-amber-300 cursor-pointer">
+              class="btn btn-gold"
+              style="padding: 4px 10px; font-size: 11px;"
+              (click)="store.setLiveControl(true)">
               Turn ON Live Control
             </button>
           </div>
 
-          <!-- Scrollable Body (min-h-0 guarantees flexbox scrollability) -->
-          <div class="flex-1 min-h-0 overflow-y-auto p-5 space-y-3">
+          <!-- Scrollable List Body -->
+          <div class="scenes-body">
             <!-- Empty State -->
             <div
               *ngIf="store.scenes().length === 0 && !store.scenesLoading()"
-              class="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-700 bg-[#131926] p-8 text-center space-y-3">
-              <div class="text-sm font-semibold text-white">No saved scenes yet</div>
-              <p class="max-w-md text-xs text-slate-300 leading-relaxed">
-                Create a scene to pick which apps you want (e.g. Chrome on the Left Half, Antigravity on the Right Half) and trigger them anytime with a 3-finger or 4-finger gesture.
+              class="scenes-empty">
+              <div style="font-size: 16px; font-weight: 700; color: #ffffff;">
+                No saved scenes yet
+              </div>
+              <p style="font-size: 13px; color: #94a3b8; max-width: 440px; margin: 0; line-height: 1.5;">
+                Click <strong>"+ New Scene"</strong> to check which apps you want (for example, Chrome on the Left Half and Antigravity on the Right Half) and assign a 3-finger or 4-finger gesture.
               </p>
-              <button
-                type="button"
-                (click)="openSaveModal()"
-                class="rounded-lg bg-amber-400 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-amber-300 transition cursor-pointer">
+              <button type="button" class="btn btn-gold" (click)="openSaveModal()">
                 + Create Your First Scene
               </button>
             </div>
 
-            <!-- Loading State -->
-            <div
-              *ngIf="store.scenesLoading()"
-              class="flex items-center justify-center p-8 font-mono text-xs text-slate-300 gap-2">
-              Loading saved scenes…
-            </div>
-
             <!-- Saved Scene Cards -->
-            <div
-              *ngFor="let scene of store.scenes()"
-              class="flex flex-col gap-3 rounded-xl border border-slate-700 bg-[#151c2c] p-4 shadow-sm">
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
+            <div *ngFor="let scene of store.scenes()" class="scene-card">
+              <div class="scene-card-top">
+                <div style="min-width: 0; flex: 1;">
                   <div class="flex items-center gap-2 flex-wrap">
-                    <h3 class="font-display text-sm font-bold text-white truncate">
+                    <span style="font-size: 16px; font-weight: 700; color: #ffffff;">
                       {{ scene.name }}
-                    </h3>
-                    <span
-                      *ngIf="scene.gestureFingers"
-                      class="rounded-md border border-emerald-500/40 bg-emerald-950 px-2 py-0.5 font-mono text-[11px] font-semibold text-emerald-300">
+                    </span>
+                    <span *ngIf="scene.gestureFingers" class="scene-badge-gesture">
                       🖐️ {{ scene.gestureFingers }}-Finger Gesture
                     </span>
-                    <span
-                      *ngIf="!scene.gestureFingers"
-                      class="rounded-md border border-slate-700 bg-[#1d263b] px-2 py-0.5 font-mono text-[11px] text-slate-300">
+                    <span *ngIf="!scene.gestureFingers" class="scene-badge-none">
                       Button Only
                     </span>
                   </div>
 
-                  <!-- Clear Text Summary of Each App & Its Position -->
-                  <div class="mt-2 flex flex-wrap gap-1.5">
-                    <span
-                      *ngFor="let win of scene.windows; let i = index"
-                      class="inline-flex items-center gap-1.5 rounded-md border border-slate-700 bg-[#0d111a] px-2.5 py-1 text-xs text-slate-200">
-                      <span class="font-semibold text-amber-300">{{ win.processName }}</span>
-                      <span class="text-slate-400">→</span>
-                      <span class="font-mono text-[11px] text-white">{{ describeWindowZone(win.rect, win.state) }}</span>
-                    </span>
+                  <!-- Clear App + Position Pills -->
+                  <div class="scene-app-pill-list">
+                    <div *ngFor="let win of scene.windows" class="scene-app-pill">
+                      <strong style="color: #f5c451;">{{ win.processName }}</strong>
+                      <span style="color: #64748b;">→</span>
+                      <span style="color: #ffffff; font-weight: 600;">
+                        {{ describeWindowZone(win.rect, win.state) }}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
-                <!-- Compact Visual Mini-Map -->
-                <div class="relative h-14 w-24 shrink-0 rounded-lg border border-slate-600 bg-[#090c12] overflow-hidden">
+                <!-- Mini Screen Map -->
+                <div class="scene-minimap">
                   <div
                     *ngFor="let win of scene.windows; let i = index"
-                    class="absolute border text-[8px] font-mono font-bold flex items-center justify-center overflow-hidden px-0.5"
+                    class="screen-preview-window"
+                    [ngClass]="'win-color-' + (i % 4)"
                     [style.left.%]="win.rect.x * 100"
                     [style.top.%]="win.rect.y * 100"
                     [style.width.%]="win.rect.w * 100"
-                    [style.height.%]="win.rect.h * 100"
-                    [ngClass]="getWindowColorClass(i)">
-                    <span class="truncate">{{ win.processName }}</span>
+                    [style.height.%]="win.rect.h * 100">
+                    <span style="font-size: 9px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">
+                      {{ win.processName }}
+                    </span>
                   </div>
                 </div>
               </div>
 
-              <!-- Card Footer Buttons -->
-              <div class="flex items-center justify-between border-t border-slate-800 pt-2.5">
+              <!-- Card Footer Actions -->
+              <div class="scene-card-actions">
                 <div class="flex items-center gap-2">
-                  <button
-                    type="button"
-                    (click)="openEditModal(scene)"
-                    class="rounded-lg border border-slate-700 bg-[#1d263b] px-3 py-1 text-xs font-medium text-slate-200 hover:border-slate-500 hover:text-white transition cursor-pointer">
-                    Edit Apps &amp; Layout
+                  <button type="button" class="btn btn-secondary" (click)="openEditModal(scene)">
+                    ✎ Edit Apps &amp; Layout
                   </button>
-                  <button
-                    type="button"
-                    (click)="store.deleteScene(scene.id)"
-                    class="rounded-lg border border-red-900/60 bg-red-950/40 px-2.5 py-1 text-xs font-medium text-red-300 hover:bg-red-900/50 transition cursor-pointer">
+                  <button type="button" class="btn btn-danger" (click)="store.deleteScene(scene.id)">
                     Delete
                   </button>
                 </div>
 
-                <button
-                  type="button"
-                  (click)="testSceneNow(scene)"
-                  class="inline-flex items-center gap-1.5 rounded-lg bg-amber-400 px-3.5 py-1.5 text-xs font-bold text-slate-950 shadow hover:bg-amber-300 transition cursor-pointer">
-                  <span>▶ Run Scene Now</span>
+                <button type="button" class="btn btn-gold" (click)="testSceneNow(scene)">
+                  ▶ Run Scene Now
                 </button>
               </div>
             </div>
           </div>
 
-          <!-- Sticky Footer -->
-          <div class="flex shrink-0 items-center justify-between border-t border-slate-800 bg-[#111723] px-5 py-2.5 font-mono text-[11px] text-slate-400">
-            <span>Tip: Hold 3 or 4 fingers steady in front of the camera to trigger your scene.</span>
-            <button
-              type="button"
-              (click)="store.toggleScenesDrawer(false)"
-              class="rounded-lg border border-slate-700 bg-[#1a2234] px-3 py-1 text-xs text-slate-200 hover:text-white cursor-pointer">
+          <!-- Footer -->
+          <div class="scenes-footer">
+            <span style="font-size: 12px; color: #94a3b8;">
+              Tip: Raise 3 or 4 fingers steady in front of the camera to trigger your scene anytime.
+            </span>
+            <button type="button" class="btn btn-secondary" (click)="store.toggleScenesDrawer(false)">
               Close
             </button>
           </div>
@@ -257,277 +748,240 @@ export interface ConfigurableSceneAppItem {
 
         <!-- ======================= VIEW 2: SCENE BUILDER / EDITOR ======================= -->
         <ng-container *ngIf="isModalOpen()">
-          <!-- Sticky Header -->
-          <div class="flex shrink-0 items-center justify-between gap-3 border-b border-slate-800 bg-[#111723] px-5 py-3.5">
+          <!-- Header -->
+          <div class="scenes-header">
             <div>
-              <h2 id="scenes-panel-title" class="font-display text-base font-bold text-white">
+              <h2 id="scenes-panel-title" class="scenes-title">
                 {{ editingSceneId() ? 'Edit Scene Layout' : 'Create New Scene' }}
               </h2>
-              <p class="text-xs text-slate-400">
-                Follow the 3 simple steps below to choose your apps and where they go on screen.
+              <p class="scenes-subtitle">
+                1. Name your scene · 2. Pick a hand gesture · 3. Check your apps &amp; pick Left / Right / Full
               </p>
             </div>
-            <button
-              type="button"
-              (click)="closeModal()"
-              class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-700 bg-[#1a2234] text-slate-300 hover:bg-slate-700 hover:text-white cursor-pointer">
+            <button type="button" class="btn-close" (click)="closeModal()" aria-label="Close editor">
               ✕
             </button>
           </div>
 
-          <!-- Scrollable Builder Body (min-h-0 ensures smooth vertical scrolling) -->
-          <div class="flex-1 min-h-0 overflow-y-auto p-5 space-y-4">
-            <!-- STEP 1 & 2: Name + Gesture Trigger -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-xl border border-slate-800 bg-[#141b29] p-3.5">
-              <!-- Step 1: Scene Name -->
-              <div class="space-y-1.5">
-                <label for="scene-name-input" class="block font-mono text-[11px] font-bold uppercase text-amber-300">
-                  Step 1 · Scene Name
-                </label>
+          <!-- Scrollable Builder Body -->
+          <div class="scenes-body">
+            <!-- Step 1 & Step 2 Row -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px;">
+              <!-- Step 1 -->
+              <div class="step-box">
+                <label for="scene-name-input" class="step-label">Step 1 · Scene Name</label>
                 <input
                   id="scene-name-input"
                   type="text"
                   maxlength="60"
                   [(ngModel)]="modalName"
-                  placeholder="e.g. Coding Split"
-                  class="w-full rounded-lg border border-slate-700 bg-[#0b0f17] px-3 py-2 text-xs font-medium text-white placeholder:text-slate-500 focus:border-amber-400 focus:outline-none" />
+                  placeholder="e.g. Chrome + Antigravity Split"
+                  class="text-input" />
               </div>
 
-              <!-- Step 2: Hand Gesture Trigger -->
-              <div class="space-y-1.5">
-                <label class="block font-mono text-[11px] font-bold uppercase text-amber-300">
-                  Step 2 · Hand Gesture Shortcut
-                </label>
-                <div class="grid grid-cols-3 gap-1.5">
+              <!-- Step 2 -->
+              <div class="step-box">
+                <span class="step-label">Step 2 · Hand Gesture Shortcut</span>
+                <div class="gesture-choice-grid">
                   <button
                     type="button"
-                    (click)="!isGestureTaken(3) && (modalGesture = 3)"
+                    class="gesture-choice-btn"
+                    [class.active]="modalGesture === 3"
                     [disabled]="isGestureTaken(3)"
-                    class="rounded-lg border px-2 py-2 text-center text-xs font-medium transition cursor-pointer"
-                    [ngClass]="{
-                      'border-emerald-400 bg-emerald-950 text-emerald-200 font-bold': modalGesture === 3,
-                      'border-slate-700 bg-[#0b0f17] text-slate-300 hover:border-slate-500': modalGesture !== 3 && !isGestureTaken(3),
-                      'border-slate-800 bg-[#0b0f17]/50 text-slate-600 cursor-not-allowed': isGestureTaken(3)
-                    }">
-                    🖐️ 3 Fingers
+                    (click)="!isGestureTaken(3) && (modalGesture = 3)">
+                    <span>🖐️ 3 Fingers</span>
+                    <span style="font-size: 10px; font-weight: 400; opacity: 0.8;">
+                      {{ isGestureTaken(3) ? 'Already used' : 'Index+Mid+Ring' }}
+                    </span>
                   </button>
 
                   <button
                     type="button"
-                    (click)="!isGestureTaken(4) && (modalGesture = 4)"
+                    class="gesture-choice-btn"
+                    [class.active]="modalGesture === 4"
                     [disabled]="isGestureTaken(4)"
-                    class="rounded-lg border px-2 py-2 text-center text-xs font-medium transition cursor-pointer"
-                    [ngClass]="{
-                      'border-emerald-400 bg-emerald-950 text-emerald-200 font-bold': modalGesture === 4,
-                      'border-slate-700 bg-[#0b0f17] text-slate-300 hover:border-slate-500': modalGesture !== 4 && !isGestureTaken(4),
-                      'border-slate-800 bg-[#0b0f17]/50 text-slate-600 cursor-not-allowed': isGestureTaken(4)
-                    }">
-                    🖐️ 4 Fingers
+                    (click)="!isGestureTaken(4) && (modalGesture = 4)">
+                    <span>🖐️ 4 Fingers</span>
+                    <span style="font-size: 10px; font-weight: 400; opacity: 0.8;">
+                      {{ isGestureTaken(4) ? 'Already used' : 'Thumb tucked' }}
+                    </span>
                   </button>
 
                   <button
                     type="button"
-                    (click)="modalGesture = null"
-                    class="rounded-lg border px-2 py-2 text-center text-xs font-medium transition cursor-pointer"
-                    [ngClass]="
-                      modalGesture === null
-                        ? 'border-amber-400 bg-amber-950/80 text-amber-200 font-bold'
-                        : 'border-slate-700 bg-[#0b0f17] text-slate-300 hover:border-slate-500'
-                    ">
-                    None
+                    class="gesture-choice-btn"
+                    [class.active]="modalGesture === null"
+                    (click)="modalGesture = null">
+                    <span>Button Only</span>
+                    <span style="font-size: 10px; font-weight: 400; opacity: 0.8;">No gesture</span>
                   </button>
                 </div>
               </div>
             </div>
 
-            <!-- Compact Live Screen Preview -->
-            <div class="rounded-xl border border-slate-800 bg-[#141b29] p-3.5 space-y-2">
+            <!-- Live Screen Layout Preview -->
+            <div class="step-box">
               <div class="flex items-center justify-between">
-                <span class="font-mono text-[11px] font-bold uppercase text-slate-300">
-                  Screen Layout Preview ({{ selectedAppCount() }} {{ selectedAppCount() === 1 ? 'app' : 'apps' }} checked)
+                <span class="step-label">
+                  Live Screen Preview ({{ selectedAppCount() }} {{ selectedAppCount() === 1 ? 'app' : 'apps' }} selected)
                 </span>
-                <span class="font-mono text-[11px] text-slate-400">
-                  Shows where checked apps will be placed
+                <span style="font-size: 11px; color: #94a3b8;">
+                  Shows exactly how your screen will be arranged
                 </span>
               </div>
-              <div class="relative h-24 w-full rounded-lg border border-slate-700 bg-[#080b11] overflow-hidden">
-                <!-- Half-screen center divider line -->
-                <div class="absolute inset-y-0 left-1/2 border-l border-dashed border-slate-800 pointer-events-none"></div>
 
+              <div class="screen-preview-frame">
                 <div
                   *ngIf="selectedApps().length === 0"
-                  class="absolute inset-0 flex items-center justify-center font-mono text-xs text-slate-500">
-                  Check at least one app in Step 3 below
+                  style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #64748b;">
+                  Check one or more apps in Step 3 below to see them on screen
                 </div>
 
                 <div
                   *ngFor="let item of selectedApps(); let i = index"
-                  class="absolute border rounded-md flex flex-col items-center justify-center overflow-hidden p-1 text-center transition-all duration-150"
+                  class="screen-preview-window"
+                  [ngClass]="'win-color-' + (i % 4)"
                   [style.left.%]="item.targetRect.x * 100"
                   [style.top.%]="item.targetRect.y * 100"
                   [style.width.%]="item.targetRect.w * 100"
-                  [style.height.%]="item.targetRect.h * 100"
-                  [ngClass]="getWindowColorClass(i)">
-                  <span class="font-display text-xs font-bold truncate max-w-full">
+                  [style.height.%]="item.targetRect.h * 100">
+                  <span style="font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;">
                     {{ item.processName }}
                   </span>
-                  <span class="font-mono text-[10px] truncate max-w-full">
+                  <span style="font-size: 10px; opacity: 0.9;">
                     {{ getPresetShortLabel(item.presetId) }}
                   </span>
                 </div>
               </div>
             </div>
 
-            <!-- STEP 3: Check Apps & Choose Screen Side -->
-            <div class="space-y-2.5">
+            <!-- Step 3: App List & Position Selector -->
+            <div class="step-box">
               <div class="flex items-center justify-between flex-wrap gap-2">
-                <label class="font-mono text-[11px] font-bold uppercase text-amber-300">
-                  Step 3 · Check Apps &amp; Pick Their Screen Position
-                </label>
+                <span class="step-label">
+                  Step 3 · Check Apps &amp; Choose Where Each App Goes
+                </span>
 
-                <div class="flex items-center gap-1.5 flex-wrap">
+                <div class="flex items-center gap-2 flex-wrap">
                   <button
                     type="button"
-                    (click)="addPresetApp('Notepad', 'notepad.exe', 'Notepad')"
-                    class="rounded-md border border-slate-700 bg-[#1a2234] px-2 py-1 font-mono text-[11px] text-slate-200 hover:border-amber-400 cursor-pointer">
+                    class="btn btn-secondary"
+                    style="padding: 5px 10px; font-size: 11px;"
+                    (click)="addPresetApp('Notepad', 'notepad.exe', 'Notepad')">
                     + Notepad
                   </button>
                   <button
                     type="button"
-                    (click)="addPresetApp('CalculatorApp', 'calc.exe', 'Calculator')"
-                    class="rounded-md border border-slate-700 bg-[#1a2234] px-2 py-1 font-mono text-[11px] text-slate-200 hover:border-amber-400 cursor-pointer">
+                    class="btn btn-secondary"
+                    style="padding: 5px 10px; font-size: 11px;"
+                    (click)="addPresetApp('CalculatorApp', 'calc.exe', 'Calculator')">
                     + Calculator
                   </button>
                   <button
                     type="button"
-                    (click)="refreshOpenApps()"
-                    class="rounded-md border border-amber-400/50 bg-amber-950/60 px-2.5 py-1 font-mono text-[11px] font-semibold text-amber-300 hover:bg-amber-900/60 cursor-pointer">
+                    class="btn btn-secondary"
+                    style="padding: 5px 10px; font-size: 11px; color: #f5c451; border-color: rgba(245,196,81,0.4);"
+                    (click)="refreshOpenApps()">
                     ↻ Refresh Open Windows
                   </button>
                 </div>
               </div>
 
-              <!-- List of Open Windows -->
-              <div class="space-y-2">
-                <div
-                  *ngIf="configurableApps().length === 0"
-                  class="rounded-xl border border-dashed border-slate-700 bg-[#131926] p-5 text-center text-xs text-slate-400">
+              <div *ngIf="configurableApps().length === 0" class="scenes-empty" style="padding: 20px;">
+                <span style="font-size: 12px; color: #94a3b8;">
                   No open desktop windows detected. Open an app and click <strong>Refresh Open Windows</strong>.
-                </div>
+                </span>
+              </div>
 
-                <div
-                  *ngFor="let app of configurableApps(); let idx = index"
-                  class="rounded-xl border p-3 transition"
-                  [ngClass]="
-                    app.selected
-                      ? 'border-amber-400/70 bg-[#182235]'
-                      : 'border-slate-800 bg-[#111622] hover:border-slate-700'
-                  ">
-                  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                    <!-- Checkbox + App Name -->
-                    <label class="flex items-center gap-3 min-w-0 flex-1 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        [checked]="app.selected"
-                        (change)="toggleAppSelection(idx)"
-                        class="h-4 w-4 rounded border-slate-600 accent-amber-400 cursor-pointer shrink-0" />
-                      <div class="min-w-0 flex-1">
-                        <div class="flex items-center gap-2">
-                          <span class="font-display text-xs font-bold text-white truncate">
-                            {{ app.processName }}
-                          </span>
-                          <span
-                            *ngIf="app.selected"
-                            class="rounded bg-amber-400/20 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-amber-300">
-                            {{ getPresetShortLabel(app.presetId) }}
-                          </span>
-                        </div>
-                        <div class="text-[11px] text-slate-400 truncate">
-                          {{ app.title }}
-                        </div>
-                      </div>
-                    </label>
-
-                    <!-- Clear Position Buttons -->
-                    <div class="flex items-center gap-1.5 shrink-0 flex-wrap">
-                      <button
-                        type="button"
-                        (click)="setAppPreset(idx, 'left')"
-                        class="rounded-lg border px-2.5 py-1 font-mono text-[11px] transition cursor-pointer"
-                        [ngClass]="
-                          app.selected && app.presetId === 'left'
-                            ? 'border-amber-400 bg-amber-400 text-slate-950 font-bold'
-                            : 'border-slate-700 bg-[#0d111a] text-slate-300 hover:border-slate-500'
-                        ">
-                        ◧ Left Half
-                      </button>
-
-                      <button
-                        type="button"
-                        (click)="setAppPreset(idx, 'right')"
-                        class="rounded-lg border px-2.5 py-1 font-mono text-[11px] transition cursor-pointer"
-                        [ngClass]="
-                          app.selected && app.presetId === 'right'
-                            ? 'border-amber-400 bg-amber-400 text-slate-950 font-bold'
-                            : 'border-slate-700 bg-[#0d111a] text-slate-300 hover:border-slate-500'
-                        ">
-                        ◨ Right Half
-                      </button>
-
-                      <button
-                        type="button"
-                        (click)="setAppPreset(idx, 'maximized')"
-                        class="rounded-lg border px-2.5 py-1 font-mono text-[11px] transition cursor-pointer"
-                        [ngClass]="
-                          app.selected && app.presetId === 'maximized'
-                            ? 'border-amber-400 bg-amber-400 text-slate-950 font-bold'
-                            : 'border-slate-700 bg-[#0d111a] text-slate-300 hover:border-slate-500'
-                        ">
-                        ⬜ Full
-                      </button>
-
-                      <select
-                        [ngModel]="app.presetId"
-                        (ngModelChange)="setAppPreset(idx, $event)"
-                        aria-label="More screen positions"
-                        class="rounded-lg border border-slate-700 bg-[#0d111a] px-2 py-1 font-mono text-[11px] text-slate-200 focus:border-amber-400 focus:outline-none cursor-pointer">
-                        <option *ngFor="let preset of placementPresets" [value]="preset.id">
-                          {{ preset.label }}
-                        </option>
-                      </select>
+              <div *ngFor="let app of configurableApps(); let idx = index" class="app-row" [class.selected]="app.selected">
+                <!-- Left: Checkbox + App Name & Window Title -->
+                <label class="app-row-left">
+                  <input
+                    type="checkbox"
+                    class="app-checkbox"
+                    [checked]="app.selected"
+                    (change)="toggleAppSelection(idx)" />
+                  <div style="min-width: 0;">
+                    <div class="flex items-center gap-2">
+                      <span class="app-name">{{ app.processName }}</span>
+                      <span
+                        *ngIf="app.selected"
+                        style="font-size: 11px; font-weight: 700; color: #f5c451;">
+                        → {{ getPresetShortLabel(app.presetId) }}
+                      </span>
                     </div>
+                    <div class="app-title" [title]="app.title">{{ app.title }}</div>
                   </div>
+                </label>
+
+                <!-- Right: One-Click Position Buttons -->
+                <div class="app-row-right">
+                  <button
+                    type="button"
+                    class="zone-btn"
+                    [class.active]="app.selected && app.presetId === 'left'"
+                    (click)="setAppPreset(idx, 'left')">
+                    ◧ Left Half
+                  </button>
+
+                  <button
+                    type="button"
+                    class="zone-btn"
+                    [class.active]="app.selected && app.presetId === 'right'"
+                    (click)="setAppPreset(idx, 'right')">
+                    ◨ Right Half
+                  </button>
+
+                  <button
+                    type="button"
+                    class="zone-btn"
+                    [class.active]="app.selected && app.presetId === 'maximized'"
+                    (click)="setAppPreset(idx, 'maximized')">
+                    ⬜ Full Screen
+                  </button>
+
+                  <select
+                    class="zone-select"
+                    [ngModel]="app.presetId"
+                    (ngModelChange)="setAppPreset(idx, $event)"
+                    aria-label="More screen positions">
+                    <option *ngFor="let preset of placementPresets" [value]="preset.id">
+                      {{ preset.label }}
+                    </option>
+                  </select>
                 </div>
               </div>
             </div>
           </div>
 
-          <!-- Sticky Builder Footer -->
-          <div class="flex shrink-0 items-center justify-between gap-2 border-t border-slate-800 bg-[#111723] px-5 py-3">
-            <span class="font-mono text-xs text-slate-300">
-              {{ selectedAppCount() === 0 ? 'Check at least 1 app above' : selectedAppCount() + ' app(s) ready to save' }}
+          <!-- Sticky Editor Footer -->
+          <div class="scenes-footer">
+            <span style="font-size: 12px; color: #cbd5e1;">
+              {{
+                selectedAppCount() === 0
+                  ? 'Please check at least 1 app above to save.'
+                  : selectedAppCount() + ' app(s) selected for this scene.'
+              }}
             </span>
 
             <div class="flex items-center gap-2">
-              <button
-                type="button"
-                (click)="closeModal()"
-                class="rounded-lg border border-slate-700 bg-[#1a2234] px-3.5 py-1.5 text-xs font-medium text-slate-200 hover:text-white cursor-pointer">
+              <button type="button" class="btn btn-secondary" (click)="closeModal()">
                 Cancel
               </button>
               <button
                 type="button"
-                (click)="saveModal(false)"
+                class="btn btn-secondary"
+                style="border-color: #f5c451; color: #f5c451;"
                 [disabled]="selectedAppCount() === 0"
-                class="rounded-lg border border-amber-400/60 bg-[#1f293d] px-4 py-1.5 text-xs font-bold text-amber-300 hover:bg-[#27344d] cursor-pointer disabled:opacity-40">
-                Save Only
+                (click)="saveModal(false)">
+                Save Scene
               </button>
               <button
                 type="button"
-                (click)="saveModal(true)"
+                class="btn btn-gold"
                 [disabled]="selectedAppCount() === 0"
-                class="rounded-lg bg-amber-400 px-4 py-1.5 text-xs font-bold text-slate-950 shadow hover:bg-amber-300 cursor-pointer disabled:opacity-40">
-                Save &amp; Test Layout Now
+                (click)="saveModal(true)">
+                ▶ Save &amp; Test Layout Now
               </button>
             </div>
           </div>
@@ -777,18 +1231,7 @@ export class ScenesPanelComponent {
     return found ? found.name : 'Taken';
   }
 
-  getWindowColorClass(index: number): string {
-    const colors = [
-      'bg-amber-500/35 border-amber-400 text-amber-100',
-      'bg-emerald-500/35 border-emerald-400 text-emerald-100',
-      'bg-sky-500/35 border-sky-400 text-sky-100',
-      'bg-fuchsia-500/35 border-fuchsia-400 text-fuchsia-100'
-    ];
-    return colors[index % colors.length];
-  }
-
   private initializeAppsFromOpenCandidates(candidates: OpenWindowCandidate[]): void {
-    // Default the first two selected windows to a clean Left Half / Right Half split!
     const items: ConfigurableSceneAppItem[] = candidates.map((c, idx) => {
       const defaultSelected = idx < 2;
       const defaultPreset: ScenePlacementPresetId =
