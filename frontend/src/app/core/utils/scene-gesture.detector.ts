@@ -23,16 +23,9 @@ export const INDEX_MCP_LANDMARK = 5;
 export const PINKY_MCP_LANDMARK = 17;
 
 /**
- * Heuristic to detect whether the thumb is tucked against or across the palm.
- *
- * Rationale:
- * In an open palm (high-five), the thumb is extended outward (abducted) away from the index
- * and middle MCPs (distance > 0.65 * handScale).
- * When tucked across the palm (for a 4-finger salute/scene gesture), the thumb tip is folded
- * inwards toward the palm center or base of the fingers (distance < 0.60 * handScale).
- * This prevents the 4-finger scene gesture from accidentally colliding with open-palm poses.
+ * Checks whether the thumb is extended outward away from the palm (as in Shaka 🤙 or open hand).
  */
-export function isThumbTucked(landmarks: HandLandmarks): boolean {
+export function isThumbExtendedOutward(landmarks: HandLandmarks): boolean {
   if (!landmarks || landmarks.length < 21) {
     return false;
   }
@@ -50,17 +43,37 @@ export function isThumbTucked(landmarks: HandLandmarks): boolean {
   const thumbToMiddleMcp = euclideanDistance2D(thumbTip, middleMcp);
   const thumbToIndexMcp = euclideanDistance2D(thumbTip, indexMcp);
 
-  // Relaxed threshold so users can naturally fold or rest their thumb without contorting
-  // it into a false pinch against the index finger, while still rejecting wide-open palms
-  // where thumbToMiddleMcp is > 1.0 * handScale.
-  return thumbToMiddleMcp < handScale * 0.85 || thumbToIndexMcp < handScale * 0.65;
+  return thumbToMiddleMcp >= handScale * 0.62 && thumbToIndexMcp >= handScale * 0.48;
 }
 
 /**
- * Classifies raw hand landmarks into a Scene gesture finger count:
- * - 3: Index, middle, and ring fingers extended; pinky curled; thumb ignored.
- * - 4: Index, middle, ring, and pinky extended; thumb tucked across/against palm.
- * - null: Any other hand posture (e.g., open palm, pinch, fist, V-sign, point).
+ * Legacy helper preserved for backward compatibility with unit tests:
+ * returns true when thumb is folded inward toward the palm.
+ */
+export function isThumbTucked(landmarks: HandLandmarks): boolean {
+  if (!landmarks || landmarks.length < 21) {
+    return false;
+  }
+  return !isThumbExtendedOutward(landmarks);
+}
+
+/**
+ * Classifies raw hand landmarks into an orthogonal Scene gesture slot (`3` or `4`)
+ * that NEVER collides with Pinch-Grab, V-Sign Scroll, or Open-Palm Window Switch:
+ *
+ * - Slot `3` (🤘 Rock-On Sign):
+ *   Index (#8) AND Pinky (#20) are extended; Middle (#12) AND Ring (#16) are curled down!
+ *   Also verifies thumb (#4) is not pinching index (#8).
+ *
+ * - Slot `4` (🤙 Shaka / Call-Me Sign):
+ *   Thumb (#4) AND Pinky (#20) are extended outward; Index (#8), Middle (#12), AND Ring (#16) are curled down!
+ *
+ * Why zero interference:
+ * - Both signs require Middle AND Ring fingers to be curled down, so an open hand (hover/swipe)
+ *   never matches.
+ * - Both signs require Pinky to be extended AND Middle to be curled, so V-sign scroll (Index+Middle up, Pinky curled)
+ *   never matches.
+ * - Pinching thumb + index never matches either sign.
  */
 export function classifyScenePose(landmarks: HandLandmarks | null): 3 | 4 | null {
   if (!landmarks || landmarks.length < 21) {
@@ -72,19 +85,32 @@ export function classifyScenePose(landmarks: HandLandmarks | null): 3 | 4 | null
   const ringExt = isFingerExtended(landmarks, RING_TIP_LANDMARK, RING_PIP_LANDMARK);
   const pinkyExt = isFingerExtended(landmarks, PINKY_TIP_LANDMARK, PINKY_PIP_LANDMARK);
 
-  // Both 3-finger and 4-finger require index, middle, and ring to be extended.
-  if (!indexExt || !middleExt || !ringExt) {
+  // Both orthogonal scene signs (🤘 Rock-On and 🤙 Shaka) require:
+  // 1. Pinky extended
+  // 2. Middle and Ring curled down
+  if (!pinkyExt || middleExt || ringExt) {
     return null;
   }
 
-  // 3-finger scene gesture: pinky must be curled down. Thumb is ignored.
-  if (!pinkyExt) {
+  const wrist = landmarks[WRIST_LANDMARK];
+  const middleMcp = landmarks[MIDDLE_MCP_LANDMARK];
+  const thumbTip = landmarks[THUMB_TIP_LANDMARK];
+  const indexTip = landmarks[INDEX_TIP_LANDMARK];
+  const handScale = Math.max(euclideanDistance2D(wrist, middleMcp), 0.05);
+
+  // Guard: if thumb tip and index tip are pinched together, this is a Pinch-Grab, NOT a scene sign!
+  const pinchDistNorm = euclideanDistance2D(thumbTip, indexTip) / handScale;
+  if (pinchDistNorm <= 0.35) {
+    return null;
+  }
+
+  // Slot 3 -> 🤘 Rock-On: Index extended + Pinky extended (Middle & Ring curled)
+  if (indexExt) {
     return 3;
   }
 
-  // 4-finger scene gesture: pinky is extended, but thumb MUST be tucked across the palm.
-  // If thumb is open/abducted, this is an open palm (high-five) and must NOT trigger.
-  if (isThumbTucked(landmarks)) {
+  // Slot 4 -> 🤙 Shaka: Index curled + Pinky extended + Thumb extended outward (Middle & Ring curled)
+  if (!indexExt && isThumbExtendedOutward(landmarks)) {
     return 4;
   }
 
@@ -105,9 +131,9 @@ export interface SceneGestureDetectorOptions {
 }
 
 /**
- * Pure observer class that tracks 3-finger and 4-finger scene gestures over time.
+ * Pure observer class that tracks Rock-On (slot 3) and Shaka (slot 4) scene gestures over time.
  * Enforces steady hold duration, velocity limits, and post-trigger cooldowns without
- * altering the underlying gesture state machine.
+ * altering or interfering with the underlying gesture state machine.
  */
 export class SceneGestureDetector {
   private activeFingers: 3 | 4 | null = null;
@@ -135,21 +161,17 @@ export class SceneGestureDetector {
   ): SceneGestureResult {
     const holdMs = this.options.holdMs ?? 600;
     const cooldownMs = this.options.cooldownMs ?? 1500;
-    // Note: GestureEngine computes velocity in normalized screen units PER SECOND (dist / dtSec).
-    // Normal webcam stillness has 0.10 - 0.90 units/sec of sensor jitter; rapid swipes exceed 1.8.
     const maxVelocity = this.options.maxVelocity ?? 1.8;
 
-    // Cooldown check
     const timeSinceLastTrigger = nowMs - this.lastTriggerTimeMs;
     const isCooldown = timeSinceLastTrigger < cooldownMs;
 
-    // Must be in plain HOVER state (no active pinch, drag, or scroll in progress)
+    // Only observe when in plain HOVER state (never interfere with GRABBING, DRAGGING, or SCROLLING)
     if (engineState !== 'HOVER') {
       this.reset();
       return { fingers: null, progress: 0, triggered: false, cooldownActive: isCooldown };
     }
 
-    // Hand must not be swiping rapidly across the frame
     if (velocity > maxVelocity) {
       this.reset();
       return { fingers: null, progress: 0, triggered: false, cooldownActive: isCooldown };
@@ -157,7 +179,6 @@ export class SceneGestureDetector {
 
     const detectedFingers = classifyScenePose(landmarks);
     if (detectedFingers === null) {
-      // Allow up to 120ms flicker grace if MediaPipe drops a frame while holding a pose
       if (this.activeFingers !== null && nowMs - this.lastValidPoseTimeMs <= 120 && !isCooldown) {
         const elapsed = nowMs - this.holdStartTimeMs;
         const progress = Math.min(0.99, elapsed / Math.max(1, holdMs));
@@ -174,7 +195,6 @@ export class SceneGestureDetector {
       return { fingers: detectedFingers, progress: 0, triggered: false, cooldownActive: true };
     }
 
-    // Pose maintained or changed
     if (this.activeFingers !== detectedFingers) {
       this.activeFingers = detectedFingers;
       this.holdStartTimeMs = nowMs;

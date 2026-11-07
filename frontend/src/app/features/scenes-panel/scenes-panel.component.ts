@@ -601,7 +601,7 @@ export interface ConfigurableSceneAppItem {
                   <span class="scenes-count-pill">{{ store.scenes().length }} / 20</span>
                 </div>
                 <p class="scenes-subtitle">
-                  Pick your apps, choose their screen side, and launch them with a 3-finger or 4-finger gesture.
+                  Pick your apps, choose their screen side, and launch them with a 🤘 Rock-On or 🤙 Shaka hand sign.
                 </p>
               </div>
             </div>
@@ -641,7 +641,7 @@ export interface ConfigurableSceneAppItem {
             <span>
               {{
                 store.liveControl()
-                  ? '● Live Control is ON — Running a scene or holding 3/4 fingers will move & launch your real windows.'
+                  ? '● Live Control is ON — Running a scene or holding 🤘 Rock-On / 🤙 Shaka will move & launch your real windows.'
                   : '○ Practice Mode is ON — Turn on Live Control so scenes move your real desktop windows!'
               }}
             </span>
@@ -681,7 +681,7 @@ export interface ConfigurableSceneAppItem {
                       {{ scene.name }}
                     </span>
                     <span *ngIf="scene.gestureFingers" class="scene-badge-gesture">
-                      🖐️ {{ scene.gestureFingers }}-Finger Gesture
+                      {{ scene.gestureFingers === 3 ? '🤘 Rock-On Sign (Index + Pinky)' : '🤙 Shaka Sign (Thumb + Pinky)' }}
                     </span>
                     <span *ngIf="!scene.gestureFingers" class="scene-badge-none">
                       Button Only
@@ -738,7 +738,7 @@ export interface ConfigurableSceneAppItem {
           <!-- Footer -->
           <div class="scenes-footer">
             <span style="font-size: 12px; color: #94a3b8;">
-              Tip: Raise 3 or 4 fingers steady in front of the camera to trigger your scene anytime.
+              Tip: Hold 🤘 Rock-On (Index + Pinky up) or 🤙 Shaka (Thumb + Pinky out) steady to trigger your scene.
             </span>
             <button type="button" class="btn btn-secondary" (click)="store.toggleScenesDrawer(false)">
               Close
@@ -781,7 +781,7 @@ export interface ConfigurableSceneAppItem {
 
               <!-- Step 2 -->
               <div class="step-box">
-                <span class="step-label">Step 2 · Hand Gesture Shortcut</span>
+                <span class="step-label">Step 2 · Hand Sign Shortcut</span>
                 <div class="gesture-choice-grid">
                   <button
                     type="button"
@@ -789,9 +789,9 @@ export interface ConfigurableSceneAppItem {
                     [class.active]="modalGesture === 3"
                     [disabled]="isGestureTaken(3)"
                     (click)="!isGestureTaken(3) && (modalGesture = 3)">
-                    <span>🖐️ 3 Fingers</span>
-                    <span style="font-size: 10px; font-weight: 400; opacity: 0.8;">
-                      {{ isGestureTaken(3) ? 'Already used' : 'Index+Mid+Ring' }}
+                    <span>🤘 Rock-On</span>
+                    <span style="font-size: 10px; font-weight: 400; opacity: 0.85;">
+                      {{ isGestureTaken(3) ? 'Already used' : 'Index + Pinky up' }}
                     </span>
                   </button>
 
@@ -801,9 +801,9 @@ export interface ConfigurableSceneAppItem {
                     [class.active]="modalGesture === 4"
                     [disabled]="isGestureTaken(4)"
                     (click)="!isGestureTaken(4) && (modalGesture = 4)">
-                    <span>🖐️ 4 Fingers</span>
-                    <span style="font-size: 10px; font-weight: 400; opacity: 0.8;">
-                      {{ isGestureTaken(4) ? 'Already used' : 'Thumb tucked' }}
+                    <span>🤙 Shaka</span>
+                    <span style="font-size: 10px; font-weight: 400; opacity: 0.85;">
+                      {{ isGestureTaken(4) ? 'Already used' : 'Thumb + Pinky out' }}
                     </span>
                   </button>
 
@@ -813,7 +813,7 @@ export interface ConfigurableSceneAppItem {
                     [class.active]="modalGesture === null"
                     (click)="modalGesture = null">
                     <span>Button Only</span>
-                    <span style="font-size: 10px; font-weight: 400; opacity: 0.8;">No gesture</span>
+                    <span style="font-size: 10px; font-weight: 400; opacity: 0.85;">No hand sign</span>
                   </button>
                 </div>
               </div>

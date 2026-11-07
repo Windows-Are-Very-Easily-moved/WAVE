@@ -769,9 +769,10 @@ export class HudOverlayComponent implements AfterViewInit {
 
       // Floating label
       const matchedScene = this.store.scenes().find((s) => s.gestureFingers === sceneFingers);
+      const signName = sceneFingers === 3 ? '🤘 ROCK-ON' : '🤙 SHAKA';
       const pillLabel = matchedScene
-        ? `${sceneFingers}F · ${matchedScene.name}`
-        : `${sceneFingers}-FINGER SCENE`;
+        ? `${signName} · ${matchedScene.name}`
+        : `${signName} SCENE`;
       this.drawFloatingCursorPill(ctx, cx, cy, pillLabel, this.goldBrightColor);
     }
 

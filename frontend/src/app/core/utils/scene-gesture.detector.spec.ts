@@ -3,6 +3,7 @@ import { HandLandmarks } from '../models/landmark.model';
 import {
   SceneGestureDetector,
   classifyScenePose,
+  isThumbExtendedOutward,
   isThumbTucked
 } from './scene-gesture.detector';
 
@@ -45,40 +46,41 @@ function createFixture(options: {
     // Folded across towards palm center / ring MCP
     lm[4] = { x: 0.50, y: 0.64, z: 0 };
   } else {
-    // Abducted out to the side (open palm)
+    // Extended outward to the side (as in Shaka 🤙 or open palm)
     lm[4] = { x: 0.30, y: 0.68, z: 0 };
   }
 
   return lm;
 }
 
-describe('SceneGestureDetector & Pose Classification', () => {
-  it('correctly classifies a 3-finger pose (index, middle, ring extended; pinky curled)', () => {
-    const hand = createFixture({
+describe('SceneGestureDetector & Orthogonal Pose Classification (🤘 Rock-On & 🤙 Shaka)', () => {
+  it('correctly classifies a Rock-On sign 🤘 (index + pinky extended; middle & ring curled) as slot 3', () => {
+    const rockOn = createFixture({
       indexExtended: true,
-      middleExtended: true,
-      ringExtended: true,
-      pinkyExtended: false,
-      thumbTucked: false
-    });
-
-    expect(classifyScenePose(hand)).toBe(3);
-  });
-
-  it('correctly classifies a 4-finger pose when thumb is tucked across palm', () => {
-    const hand = createFixture({
-      indexExtended: true,
-      middleExtended: true,
-      ringExtended: true,
+      middleExtended: false,
+      ringExtended: false,
       pinkyExtended: true,
       thumbTucked: true
     });
 
-    expect(isThumbTucked(hand)).toBe(true);
-    expect(classifyScenePose(hand)).toBe(4);
+    expect(classifyScenePose(rockOn)).toBe(3);
   });
 
-  it('rejects an open palm (high-five) with thumb extended outward and returns null', () => {
+  it('correctly classifies a Shaka sign 🤙 (thumb + pinky extended outward; index, middle, ring curled) as slot 4', () => {
+    const shaka = createFixture({
+      indexExtended: false,
+      middleExtended: false,
+      ringExtended: false,
+      pinkyExtended: true,
+      thumbTucked: false
+    });
+
+    expect(isThumbExtendedOutward(shaka)).toBe(true);
+    expect(classifyScenePose(shaka)).toBe(4);
+  });
+
+  it('never collides with an open palm, 3-finger or 4-finger raise, V-sign, point, or fist', () => {
+    // Open palm (all fingers extended) -> null
     const openPalm = createFixture({
       indexExtended: true,
       middleExtended: true,
@@ -86,12 +88,29 @@ describe('SceneGestureDetector & Pose Classification', () => {
       pinkyExtended: true,
       thumbTucked: false
     });
-
     expect(isThumbTucked(openPalm)).toBe(false);
     expect(classifyScenePose(openPalm)).toBe(null);
-  });
 
-  it('does not collide with V-sign, point, fist, or empty hand', () => {
+    // 4-finger raise with thumb tucked -> null (no longer interferes with hover/swipe/pinch!)
+    const fourFingerRaise = createFixture({
+      indexExtended: true,
+      middleExtended: true,
+      ringExtended: true,
+      pinkyExtended: true,
+      thumbTucked: true
+    });
+    expect(classifyScenePose(fourFingerRaise)).toBe(null);
+
+    // 3-finger raise (index, middle, ring) -> null
+    const threeFingerRaise = createFixture({
+      indexExtended: true,
+      middleExtended: true,
+      ringExtended: true,
+      pinkyExtended: false
+    });
+    expect(classifyScenePose(threeFingerRaise)).toBe(null);
+
+    // V-sign (index + middle) -> null
     const vSign = createFixture({
       indexExtended: true,
       middleExtended: true,
@@ -100,6 +119,7 @@ describe('SceneGestureDetector & Pose Classification', () => {
     });
     expect(classifyScenePose(vSign)).toBe(null);
 
+    // Point (index only) -> null
     const point = createFixture({
       indexExtended: true,
       middleExtended: false,
@@ -108,81 +128,97 @@ describe('SceneGestureDetector & Pose Classification', () => {
     });
     expect(classifyScenePose(point)).toBe(null);
 
+    // Fist -> null
     const fist = createFixture({
       indexExtended: false,
       middleExtended: false,
       ringExtended: false,
-      pinkyExtended: false
+      pinkyExtended: false,
+      thumbTucked: true
     });
     expect(classifyScenePose(fist)).toBe(null);
 
     expect(classifyScenePose(null)).toBe(null);
   });
 
+  it('rejects Rock-On if thumb and index are pinched together', () => {
+    const pinchedWithPinky = createFixture({
+      indexExtended: true,
+      middleExtended: false,
+      ringExtended: false,
+      pinkyExtended: true
+    });
+    // Put thumb tip right next to index tip (8)
+    pinchedWithPinky[4] = { ...pinchedWithPinky[8], x: pinchedWithPinky[8].x - 0.02 };
+
+    expect(classifyScenePose(pinchedWithPinky)).toBe(null);
+  });
+
   it('accumulates hold progress and triggers exactly at holdMs', () => {
     const detector = new SceneGestureDetector({ holdMs: 500, cooldownMs: 1000 });
-    const threeHand = createFixture({
+    const rockOnHand = createFixture({
       indexExtended: true,
-      middleExtended: true,
-      ringExtended: true,
-      pinkyExtended: false
+      middleExtended: false,
+      ringExtended: false,
+      pinkyExtended: true
     });
 
     // Frame 0 at t=0
-    let res = detector.update(threeHand, 'HOVER', 0.002, 1000);
+    let res = detector.update(rockOnHand, 'HOVER', 0.002, 1000);
     expect(res.fingers).toBe(3);
     expect(res.progress).toBe(0);
     expect(res.triggered).toBe(false);
 
     // Frame 1 at t=250ms (halfway)
-    res = detector.update(threeHand, 'HOVER', 0.003, 1250);
+    res = detector.update(rockOnHand, 'HOVER', 0.003, 1250);
     expect(res.fingers).toBe(3);
     expect(res.progress).toBeCloseTo(0.5, 1);
     expect(res.triggered).toBe(false);
 
     // Frame 2 at t=500ms (complete)
-    res = detector.update(threeHand, 'HOVER', 0.002, 1500);
+    res = detector.update(rockOnHand, 'HOVER', 0.002, 1500);
     expect(res.fingers).toBe(3);
     expect(res.progress).toBe(1.0);
     expect(res.triggered).toBe(true);
 
     // Immediate next frame should be in cooldown
-    res = detector.update(threeHand, 'HOVER', 0.002, 1600);
+    res = detector.update(rockOnHand, 'HOVER', 0.002, 1600);
     expect(res.triggered).toBe(false);
     expect(res.cooldownActive).toBe(true);
     expect(res.progress).toBe(0);
 
     // After cooldown expires (t > 1500 + 1000 = 2500)
-    res = detector.update(threeHand, 'HOVER', 0.002, 2600);
+    res = detector.update(rockOnHand, 'HOVER', 0.002, 2600);
     expect(res.cooldownActive).toBe(false);
     expect(res.progress).toBe(0);
   });
 
   it('aborts hold if engine state is not HOVER or velocity is too high', () => {
     const detector = new SceneGestureDetector({ holdMs: 500 });
-    const threeHand = createFixture({
-      indexExtended: true,
-      middleExtended: true,
-      ringExtended: true,
-      pinkyExtended: false
+    const shakaHand = createFixture({
+      indexExtended: false,
+      middleExtended: false,
+      ringExtended: false,
+      pinkyExtended: true,
+      thumbTucked: false
     });
 
     // Start hold
-    detector.update(threeHand, 'HOVER', 0.001, 1000);
-    let res = detector.update(threeHand, 'HOVER', 0.001, 1200);
+    detector.update(shakaHand, 'HOVER', 0.001, 1000);
+    let res = detector.update(shakaHand, 'HOVER', 0.001, 1200);
+    expect(res.fingers).toBe(4);
     expect(res.progress).toBeGreaterThan(0);
 
     // Interrupted by non-hover engine state (e.g. GRABBING)
-    res = detector.update(threeHand, 'GRABBING', 0.001, 1300);
+    res = detector.update(shakaHand, 'GRABBING', 0.001, 1300);
     expect(res.progress).toBe(0);
     expect(res.triggered).toBe(false);
 
     // Restart hold
-    detector.update(threeHand, 'HOVER', 0.001, 2000);
+    detector.update(shakaHand, 'HOVER', 0.001, 2000);
     // Interrupted by rapid hand motion (> 1.8 normalized units/sec)
-    res = detector.update(threeHand, 'HOVER', 2.5, 2200);
+    res = detector.update(shakaHand, 'HOVER', 2.5, 2200);
     expect(res.progress).toBe(0);
     expect(res.triggered).toBe(false);
   });
 });
-

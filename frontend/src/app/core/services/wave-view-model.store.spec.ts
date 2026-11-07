@@ -293,6 +293,6 @@ describe('WaveViewModelStore', () => {
 
     // Trigger scene gesture 4 (unmapped)
     await store.triggerSceneGesture(4);
-    expect(store.toasts().some((t) => t.title.includes('4-finger gesture detected'))).toBe(true);
+    expect(store.toasts().some((t) => t.title.includes('Shaka sign detected'))).toBe(true);
   });
 });

@@ -11,7 +11,7 @@ import {
   SceneSummary,
   SelectedSceneWindowInput
 } from '../models/scene.model';
-import { SceneGestureDetector, classifyScenePose } from '../utils/scene-gesture.detector';
+import { SceneGestureDetector } from '../utils/scene-gesture.detector';
 import {
   FilterType,
   GestureFrameSnapshot,
@@ -433,22 +433,23 @@ export class WaveViewModelStore {
 
   async triggerSceneGesture(fingers: 3 | 4): Promise<void> {
     const matched = this.scenes().find((s) => s.gestureFingers === fingers);
+    const signLabel = fingers === 3 ? '🤘 Rock-On sign' : '🤙 Shaka sign';
     this.playSound('snap');
     if (matched) {
       this.pushToast(
-        `${fingers}-finger gesture detected`,
+        `${signLabel} detected`,
         `Restoring scene '${matched.name}' (${matched.windowCount} windows)...`,
         'armed'
       );
-      this.announce(`${fingers}-finger gesture detected. Restoring scene ${matched.name}.`);
+      this.announce(`${signLabel} detected. Restoring scene ${matched.name}.`);
       await this.applyScene(matched);
     } else {
       this.pushToast(
-        `${fingers}-finger gesture detected`,
-        `No scene is currently assigned to ${fingers} fingers. Assign one in the Scenes drawer (W).`,
+        `${signLabel} detected`,
+        `No scene is assigned to ${signLabel}. Assign one in the Scenes panel (W).`,
         'info'
       );
-      this.announce(`${fingers}-finger gesture detected, but no scene is assigned.`);
+      this.announce(`${signLabel} detected, but no scene is assigned.`);
     }
   }
 
@@ -676,27 +677,49 @@ export class WaveViewModelStore {
     confidence: number,
     timestampMs: number
   ): void {
-    // Wave Scenes Gesture Observer — evaluate BEFORE dispatching grab/snap/cycle commands
-    // so holding 3 or 4 fingers never triggers a false Pinch-Maximize (100%) or Window Cycle!
-    let holdingSceneGesture = false;
+    const prevUi = this.frame();
+    this.latestFrame = snapshot;
+
+    const hasDiscreteEvent = Boolean(
+      snapshot.grabIssued ||
+        snapshot.snapIssued ||
+        snapshot.cycleIssued ||
+        snapshot.resizeIssued ||
+        snapshot.scrollIssued?.begin
+    );
+
+    const hasStateChange =
+      snapshot.state !== prevUi.state ||
+      snapshot.armedZone !== prevUi.armedZone ||
+      snapshot.hoveredZone !== prevUi.hoveredZone ||
+      snapshot.isPinching !== prevUi.isPinching ||
+      Boolean(snapshot.isScrolling) !== Boolean(prevUi.isScrolling);
+
+    // High-frequency streaming commands (live drag & continuous scroll wheel) run outside Angular zone
+    if (!hasDiscreteEvent && !hasStateChange) {
+      if (snapshot.moveIssued) {
+        void this.apiService.moveWindow({
+          x: snapshot.moveIssued.x,
+          y: snapshot.moveIssued.y,
+          deltaX: snapshot.moveIssued.deltaX,
+          deltaY: snapshot.moveIssued.deltaY
+        });
+      }
+      if (snapshot.scrollIssued && !snapshot.scrollIssued.begin) {
+        this.lastScrollDispatchedAtMs = performance.now();
+        void this.apiService.scrollInput(snapshot.scrollIssued);
+      }
+    }
+
+    // Wave Scenes Gesture Observer (passively observes orthogonal 🤘 Rock-On & 🤙 Shaka signs in HOVER)
     if (this.scenesEnabled() && !this.simulationMode()) {
       const hand = snapshot.handsMirrored[0] ?? null;
-      const poseFingers = classifyScenePose(hand);
-      // If 3 or 4 fingers are clearly extended, treat as HOVER for the scene detector
-      // even if a tucked thumb briefly caused the engine to think a pinch started.
-      const effectiveEngineState: GestureState =
-        poseFingers !== null && (snapshot.state === 'HOVER' || snapshot.state === 'GRABBING' || snapshot.state === 'DRAGGING')
-          ? 'HOVER'
-          : snapshot.state;
-
       const sceneRes = this.sceneDetector.update(
         hand,
-        effectiveEngineState,
+        snapshot.state,
         snapshot.velocity ?? 0,
         timestampMs
       );
-
-      holdingSceneGesture = poseFingers !== null || sceneRes.fingers !== null || sceneRes.triggered;
 
       if (sceneRes.progress !== this.sceneHoldProgress()) {
         this.sceneHoldProgress.set(sceneRes.progress);
@@ -715,57 +738,6 @@ export class WaveViewModelStore {
       this.detectedSceneGesture.set(null);
     }
 
-    // Suppress accidental grab, move, snap (e.g. Maximize 100%), or window cycle while holding 3 or 4 fingers
-    const effectiveSnapshot: GestureFrameSnapshot = holdingSceneGesture
-      ? {
-          ...snapshot,
-          state: 'HOVER',
-          isPinching: false,
-          pinchProgress: 0,
-          hoveredZone: null,
-          armedZone: null,
-          dwellProgress: 0,
-          grabIssued: undefined,
-          moveIssued: undefined,
-          snapIssued: undefined,
-          cycleIssued: undefined
-        }
-      : snapshot;
-
-    const prevUi = this.frame();
-    this.latestFrame = effectiveSnapshot;
-
-    const hasDiscreteEvent = Boolean(
-      effectiveSnapshot.grabIssued ||
-        effectiveSnapshot.snapIssued ||
-        effectiveSnapshot.cycleIssued ||
-        effectiveSnapshot.resizeIssued ||
-        effectiveSnapshot.scrollIssued?.begin
-    );
-
-    const hasStateChange =
-      effectiveSnapshot.state !== prevUi.state ||
-      effectiveSnapshot.armedZone !== prevUi.armedZone ||
-      effectiveSnapshot.hoveredZone !== prevUi.hoveredZone ||
-      effectiveSnapshot.isPinching !== prevUi.isPinching ||
-      Boolean(effectiveSnapshot.isScrolling) !== Boolean(prevUi.isScrolling);
-
-    // High-frequency streaming commands (live drag & continuous scroll wheel) run outside Angular zone
-    if (!hasDiscreteEvent && !hasStateChange) {
-      if (effectiveSnapshot.moveIssued) {
-        void this.apiService.moveWindow({
-          x: effectiveSnapshot.moveIssued.x,
-          y: effectiveSnapshot.moveIssued.y,
-          deltaX: effectiveSnapshot.moveIssued.deltaX,
-          deltaY: effectiveSnapshot.moveIssued.deltaY
-        });
-      }
-      if (effectiveSnapshot.scrollIssued && !effectiveSnapshot.scrollIssued.begin) {
-        this.lastScrollDispatchedAtMs = performance.now();
-        void this.apiService.scrollInput(effectiveSnapshot.scrollIssued);
-      }
-    }
-
     const telemetryDue = timestampMs - this.lastUiSyncMs >= 250;
     if (hasDiscreteEvent || hasStateChange || telemetryDue) {
       this.lastUiSyncMs = timestampMs;
@@ -777,13 +749,13 @@ export class WaveViewModelStore {
           this.trackingConfidence.set(confidence);
         }
         if (hasDiscreteEvent || hasStateChange) {
-          this.applyGestureSnapshot(effectiveSnapshot);
+          this.applyGestureSnapshot(snapshot);
         } else {
-          this.frame.set(effectiveSnapshot);
-          if (effectiveSnapshot.scrollIssued && effectiveSnapshot.scrollIssued.delta !== 0) {
-            const dir = effectiveSnapshot.scrollIssued.delta > 0 ? 'up' : 'down';
+          this.frame.set(snapshot);
+          if (snapshot.scrollIssued && snapshot.scrollIssued.delta !== 0) {
+            const dir = snapshot.scrollIssued.delta > 0 ? 'up' : 'down';
             this.lastActionText.set(
-              `Scroll ${dir} (${effectiveSnapshot.scrollIssued.delta > 0 ? '+' : ''}${effectiveSnapshot.scrollIssued.delta})`
+              `Scroll ${dir} (${snapshot.scrollIssued.delta > 0 ? '+' : ''}${snapshot.scrollIssued.delta})`
             );
           }
         }
