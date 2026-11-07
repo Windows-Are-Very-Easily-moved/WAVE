@@ -1,14 +1,76 @@
 # W.A.V.E 🌊
 
 > **"Windows Are Very Easily-moved"**
-> Touchless, spatial hand-gesture window manager & V-sign scroller for Windows.
+> Touchless, spatial hand-gesture window manager, V-sign scroller, and workspace scene launcher for Windows.
 
-W.A.V.E turns your laptop webcam into a local, zero-latency spatial controller for native Windows desktop apps. Pinch in mid-air to grab the window under your hand, drag toward a screen edge or corner to preview the landing zone, release to snap real OS windows flush into place, or hold up a peace sign (V-sign) and move your hand up or down to scroll any window under your cursor.
+W.A.V.E turns your webcam into a local, zero-latency spatial controller for native Windows desktop apps. Pinch in mid-air to grab the window under your hand, drag toward a screen edge or corner to preview the landing zone, release to snap real OS windows flush into place, hold up a peace sign (✌️ V-sign) to scroll, swipe a sideways palm to switch apps, or throw an orthogonal hand sign (**🤘 Rock-On** or **🤙 Shaka**) to instantly launch and restore multi-window workspaces.
 
 - **100% Local Vision:** Powered by `@mediapipe/tasks-vision` (`HandLandmarker` in `VIDEO` mode with GPU delegate + CPU fallback) bundled offline in `frontend/src/assets/mediapipe/`. Zero video frames ever leave your device.
-- **Practice Mode & Live Control Gate:** Starts safely in **Practice mode** (`Live control off`) with an interactive 4-step gesture checklist (**Hover, Grab, Snap to edge, Scroll**). Toggle **Live control on** in the header when ready to control real Windows apps.
+- **Wave Scenes (Multi-Window Workspace Launcher):** Build custom multi-window desktop layouts (e.g., Chrome on left, IDE on right, Discord in quarter). W.A.V.E automatically launches closed apps via Win32 executable paths, un-maximizes windows, applies DWM invisible border compensation, and snaps them flush with exact z-ordering.
+- **Orthogonal Scene Signs (Zero Interference):** Trigger scenes in mid-air with **🤘 Rock-On** (Index + Pinky extended) or **🤙 Shaka** (Thumb + Pinky extended) with dedicated dwell and cooldown timers—guaranteed zero false triggers with Pinch-Grab or V-Sign Scroll.
+- **"Six Moves to Master" Interactive Checklist:** Learn and practice every gesture with live visual feedback:
+  1. `01 Move` — Open hand cursor tracking
+  2. `02 Pinch & grab` — Pinch thumb and index to grab windows
+  3. `03 Snap to edge` — Drag to edges/corners and release
+  4. `04 Wave Scenes` — Hold 🤘 Rock-On or 🤙 Shaka to launch scenes
+  5. `05 Scroll` — Hold peace sign ✌️ and move hand up/down
+  6. `06 Switch apps` — Sideways open palm swipe up (Alt+Tab)
 - **Native Win32 Precision:** ASP.NET Core Web API backend (`user32.dll`, `dwmapi.dll`, `shcore.dll`) with per-monitor DPI awareness (`PER_MONITOR_AWARE_V2`), work-area awareness (`rcWork` so the taskbar is never covered), DWM Extended Frame Bounds compensation (`DWMWA_EXTENDED_FRAME_BOUNDS`), and native mouse wheel injection (`SendInput` with `MOUSEEVENTF_WHEEL = 0x0800`).
-- **Mouse Simulation Mode Included:** Toggle **Simulate** in the header to test or demo the entire gesture state machine, Win32 snapping pipeline, and V-sign scrolling with your mouse (click & hold = pinch-grab, drag to edge & release = snap, hold `Shift` + move vertically = V-sign scroll).
+- **Always-on-Top Floating PiP:** Document Picture-in-Picture (`documentPictureInPicture`) lets you pop the live HUD into an always-on-top floating window over all other desktop apps.
+- **Mouse Simulation Mode Included:** Press **Simulate** (or hand icon) in the header to demo the entire gesture pipeline with mouse & keyboard: Click & drag = Pinch-Grab, hold `Shift` + move mouse = V-Sign Scroll, press `3`/`4` = Rock-On/Shaka scenes.
+
+---
+
+## Prerequisites & Dependencies
+
+### System Requirements
+| Requirement | Specification | Notes |
+| :--- | :--- | :--- |
+| **Operating System** | **Windows 10 or Windows 11 (64-bit)** | Required for native Win32 `user32.dll` and `dwmapi.dll` window APIs and `SendInput`. |
+| **.NET SDK** | **.NET 8.0 SDK (LTS)** | **.NET 10 is NOT required.** Any standard .NET 8.0 SDK (or newer LTS) builds and runs the solution. |
+| **Node.js & npm** | **Node.js `v18.19+` or `v20+`** (with npm) | Required to run Angular 18 CLI and frontend dependencies. |
+| **Webcam** | Integrated laptop camera or USB webcam | Optional if using built-in **Mouse Simulation** mode. |
+
+---
+
+### Backend Dependencies (`backend/Scepter.Api`)
+The backend is an ASP.NET Core Web API targeting **`net8.0`**:
+
+- **Runtime & Framework:**
+  - `Microsoft.NET.Sdk.Web` targeting `.NET 8.0` (`net8.0`)
+- **NuGet Packages:**
+  - `Swashbuckle.AspNetCore` (`6.6.2`) — Swagger API documentation UI
+- **Test Project (`backend/Scepter.Api.Tests`):**
+  - `xunit` (`2.5.3`) — Unit testing framework
+  - `xunit.runner.visualstudio` (`2.5.3`) — Test runner
+  - `Microsoft.NET.Test.Sdk` (`17.8.0`) — .NET test SDK
+  - `coverlet.collector` (`6.0.0`) — Code coverage collector
+- **Windows System DLLs (P/Invoke):**
+  - `user32.dll` (`GetForegroundWindow`, `SetWindowPos`, `ShowWindow`, `WindowFromPoint`, `SendInput`, `SetCursorPos`, etc.)
+  - `dwmapi.dll` (`DwmGetWindowAttribute` with `DWMWA_EXTENDED_FRAME_BOUNDS`)
+  - `shcore.dll` (`SetProcessDpiAwarenessContext` with `DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2`)
+
+---
+
+### Frontend Dependencies (`frontend/package.json`)
+The frontend is an Angular 18 standalone application:
+
+- **Core Framework:**
+  - `@angular/core`, `@angular/common`, `@angular/compiler`, `@angular/platform-browser`, `@angular/router`, `@angular/forms`, `@angular/animations` (`^18.2.0`)
+  - `zone.js` (`~0.14.10`)
+  - `rxjs` (`~7.8.0`)
+  - `tslib` (`^2.3.0`)
+- **Computer Vision & Hand Tracking:**
+  - `@mediapipe/tasks-vision` (`0.10.18`) — Google MediaPipe Hand Landmarker runtime
+  - Bundled offline assets in `frontend/src/assets/mediapipe/`:
+    - `hand_landmarker.task` (MediaPipe neural network model file)
+    - `vision_wasm_internal.js` & `vision_wasm_internal.wasm`
+    - `vision_wasm_nosimd_internal.js` & `vision_wasm_nosimd_internal.wasm`
+- **Developer Tools & Testing:**
+  - `@angular/cli` (`^18.2.0`)
+  - `@angular-devkit/build-angular` (`^18.2.0`)
+  - `typescript` (`~5.5.2`)
+  - `vitest` (`^2.1.0`) — Fast unit test runner for pose and gesture algorithms
 
 ---
 
@@ -18,37 +80,52 @@ Frontend and backend live in strictly separated top-level folders and build/run 
 
 ```text
 WAVE/
-├── README.md              # Setup, architecture, run instructions, 60s demo script
+├── README.md              # Setup, dependencies, architecture, run instructions, demo script
 ├── docs/
-│   └── api-contract.md    # Full HTTP contract (/health, /api/window/*, /api/input/scroll)
+│   └── api-contract.md    # Full HTTP contract (/health, /api/window/*, /api/input/*, /api/scenes/*)
 ├── frontend/              # Angular 18 standalone app (http://localhost:4200)
 │   ├── src/
 │   │   ├── index.html     # <title>WAVEHUD</title> (never changes at runtime; ignored by backend)
 │   │   ├── assets/
 │   │   │   ├── fonts/     # Bundled Space Grotesk Variable & JetBrains Mono woff2 fonts
-│   │   │   └── mediapipe/ # Local offline hand_landmarker.task + WASM binaries
+│   │   │   ├── mediapipe/ # Local offline hand_landmarker.task + WASM binaries
+│   │   │   └── wave-landing-figure.jpg # Constellation landing page emblem
 │   │   └── app/
 │   │       ├── core/
-│   │       │   ├── models/   # landmark.model.ts, gesture.model.ts, snap-action.model.ts
-│   │       │   ├── services/ # wave-view-model.store, gesture-engine, window-api, camera, hand-tracker, settings
-│   │       │   └── utils/    # pose.ts (isVSign + scroll math), lerp.ts (Lerp & 1€), geometry.ts
+│   │       │   ├── models/   # landmark.model.ts, gesture.model.ts, snap-action.model.ts, scene.model.ts
+│   │       │   ├── services/ # wave-view-model.store, gesture-engine, window-api, scene-api, camera, hand-tracker, settings
+│   │       │   └── utils/    # pose.ts (isVSign + scroll math), scene-gesture.detector.ts (Rock-On/Shaka), lerp.ts, geometry.ts
 │   │       └── features/
-│   │           ├── scepter-shell/   # Main W.A.V.E stage, telemetry, practice checklist, guide
-│   │           ├── hud-overlay/     # Outside-zone rAF Canvas skeleton, pinch ring, scroll arrow
+│   │           ├── scepter-shell/   # Main W.A.V.E stage, landing modal, telemetry, 6 moves panel, guide
+│   │           ├── hud-overlay/     # Outside-zone rAF Canvas skeleton, pinch ring, progress rings, scroll arrows
+│   │           ├── scenes-panel/    # Wave Scenes workspace builder, custom app picker & zone assigner
 │   │           └── settings-panel/  # Slide-over calibration drawer + action log
 └── backend/               # ASP.NET Core Web API (.NET 8, http://localhost:5000)
     ├── Scepter.sln
     ├── Scepter.slnx
     ├── Scepter.Api/
-    │   ├── Program.cs
-    │   ├── appsettings.json # Scepter:SelfWindowTitleMatch = "WAVEHUD"
-    │   ├── Controllers/WindowController.cs, InputController.cs
-    │   ├── Services/WindowService.cs, InputService.cs, ForegroundTracker.cs, SnapCalculator.cs, ScrollCalculator.cs
-    │   ├── Native/NativeMethods.cs, NativeStructs.cs
-    │   └── Models/SnapPosition.cs, GrabRequest.cs, SnapRequest.cs, ScrollRequest.cs, SnapResult.cs
+    │   ├── Program.cs       # Kestrel configuration, CORS, DPI awareness V2
+    │   ├── appsettings.json # Scepter:SelfWindowTitleMatch = "WAVEHUD", Wave:Scenes:Enabled = true
+    │   ├── Controllers/
+    │   │   ├── WindowController.cs  # /api/window/active, /list, /grab, /move, /snap, /resize, /cycle
+    │   │   ├── InputController.cs   # /api/input/scroll (SendInput mouse wheel injection)
+    │   │   └── ScenesController.cs  # /api/scenes (open-windows, CRUD, apply, undo)
+    │   ├── Services/
+    │   │   ├── WindowService.cs, InputService.cs, ForegroundTracker.cs
+    │   │   ├── SnapCalculator.cs, ScrollCalculator.cs
+    │   │   └── SceneService.cs, SceneMatcher.cs, SceneLayoutMath.cs
+    │   ├── Native/
+    │   │   ├── NativeMethods.cs, NativeStructs.cs
+    │   │   └── SceneNativeMethods.cs (SW_RESTORE, SetWindowPos, ForceForegroundWindow, Process Start)
+    │   └── Models/
+    │       ├── SnapPosition.cs, GrabRequest.cs, SnapRequest.cs, ScrollRequest.cs, SnapResult.cs
+    │       └── SceneModels.cs (SceneSummary, SceneDefinition, SelectedSceneWindowInput)
     └── Scepter.Api.Tests/
         ├── SnapCalculatorTests.cs   # Pure xUnit rectangle & DWM border math tests
-        └── ScrollCalculatorTests.cs # Pure xUnit scroll clamping, coordinate, & x64 INPUT struct tests
+        ├── ScrollCalculatorTests.cs # Pure xUnit scroll clamping, coordinate, & x64 INPUT struct tests
+        ├── SceneLayoutMathTests.cs  # Pure xUnit zone rect calculations & resolution scaling
+        ├── SceneMatcherTests.cs     # HWND and process title matching tests
+        └── SceneServiceTests.cs     # Scene capture, storage, and apply tests
 ```
 
 ---
@@ -58,51 +135,66 @@ WAVE/
 ```mermaid
 flowchart LR
   subgraph Browser["Frontend: Angular 18 W.A.V.E HUD (http://localhost:4200)"]
-    Cam["Webcam 1280x720\n(or Mouse Simulation)"] --> MP["MediaPipe HandLandmarker\n(Local WASM + GPU/CPU)"]
-    MP --> Pose["Pose & Geometry Utils\n(Mirror X, Hand-Size Norm,\nisVSign Pose Detector)"]
+    Landing["Landing Page Overlay\n(Ambient Glow & Constellation)"] --> Cam["Webcam 1280x720\n(or Mouse Simulation)"]
+    Cam --> MP["MediaPipe HandLandmarker\n(Local WASM + GPU/CPU)"]
+    MP --> Pose["Pose & Landmark Detectors\n(Mirror X, Hand-Size Norm,\nisVSign, Rock-On & Shaka)"]
     Pose --> Filter["2D Point Filter\n(Lerp alpha=0.35 or 1€ Filter)"]
     Filter --> FSM["GestureStateMachine\n(IDLE -> HOVER -> GRABBING\n-> DRAGGING -> RELEASED / SCROLLING)"]
-    FSM --> Store["WaveViewModelStore\n(Signals, Practice Checklist,\nAction Log, Live Control Gate)"]
-    Store --> Canvas["Canvas HUD Overlay\n(Outside-Angular rAF Loop)"]
+    Pose --> SceneDet["SceneGestureDetector\n(🤘 Rock-On / 🤙 Shaka Dwell)"]
+    FSM --> Store["WaveViewModelStore\n(Signals, 6 Moves Practice,\nAction Log, Live Control Gate)"]
+    SceneDet --> Store
+    Store --> Canvas["Canvas HUD Overlay\n(Outside-Angular 60 FPS rAF Loop)"]
   end
 
-  subgraph Backend["Backend: ASP.NET Core API (http://localhost:5000)"]
+  subgraph Backend["Backend: ASP.NET Core API (.NET 8 on http://localhost:5000)"]
     WinCtrl["WindowController\n(/api/window/grab, /snap, /move)"] --> WinSvc["WindowService"]
     InCtrl["InputController\n(/api/input/scroll)"] --> InSvc["InputService"]
+    SceneCtrl["ScenesController\n(/api/scenes/open-windows, /apply)"] --> SceneSvc["SceneService"]
     Tracker["ForegroundTracker\n(Ignores 'WAVEHUD' Windows)"] --> WinSvc
     WinSvc --> Calc["SnapCalculator\n(rcWork + DWM Frame Bounds)"]
     InSvc --> SCalc["ScrollCalculator\n(Clamp +-1200 & Screen Coords)"]
+    SceneSvc --> SMath["SceneLayoutMath & Matcher\n(Un-maximize + Auto-Launch)"]
     WinSvc --> PInvoke["NativeMethods P/Invoke\n(user32.dll, dwmapi.dll)"]
     InSvc --> PInvoke
+    SceneSvc --> PInvoke
   end
 
-  Store -- "Live Control ON:\nPOST /api/window/grab, /snap\nPOST /api/input/scroll" --> Backend
-  PInvoke --> OS["Windows 10/11 OS\nWindow Snaps & Mouse Wheel"]
+  Store -- "Live Control ON:\nPOST /api/window/grab, /snap\nPOST /api/input/scroll\nPOST /api/scenes/{id}/apply" --> Backend
+  Store -. "Live Control OFF:\nPractice Mode (Windows not moved)" .-> Browser
+  PInvoke --> OS["Windows 10/11 Desktop\n(Snapping, Wheel Scroll, Scenes)"]
 ```
 
 ---
 
-## Prerequisites
+## Keyboard Shortcuts & Quick Reference
 
-- **OS:** Windows 10 or Windows 11 (required for Win32 window manipulation and `SendInput` wheel injection; non-Windows platforms return HTTP `501 Not Implemented`).
-- **.NET SDK:** .NET 8.0 SDK (or .NET 9/10 SDK targeting `net8.0`).
-- **Node.js & npm:** Node.js `v18.19+` or `v20+` and `npm`.
-- **Webcam:** Any standard USB or integrated laptop webcam (optional when using **Simulate** mode).
+| Key | Action | Context |
+| :---: | :--- | :--- |
+| **`Enter`** | Start camera & enter application | Landing page |
+| **`W`** | Open / close **Wave Scenes** manager | Any screen |
+| **`U`** | **Undo** last applied scene layout | When scene was restored |
+| **`S`** | Open / close **Settings** drawer | Any screen |
+| **`C`** | Open / close **Gesture Guide** tutorial modal | Any screen |
+| **`M`** | Toggle audio cues (Mute / Unmute) | Any screen |
+| **`Esc`** | Close open modals, drawers, or guide | Any modal / drawer |
+| **`Shift` + Move** | Simulate V-sign scrolling | In **Simulate** mode |
+| **`3`** | Simulate 🤘 **Rock-On** scene gesture | In **Simulate** mode |
+| **`4`** | Simulate 🤙 **Shaka** scene gesture | In **Simulate** mode |
 
 ---
 
 ## Backend Setup & Run (`/backend`)
 
-1. Open a terminal in `backend/Scepter.Api` and start the API:
+1. Open a PowerShell terminal in `backend/Scepter.Api`:
    ```powershell
    cd backend/Scepter.Api
    dotnet run
    ```
-   - The server binds to `http://localhost:5000`.
-   - Swagger UI is available in Development at `http://localhost:5000/swagger`.
-   - Health check endpoint: `GET http://localhost:5000/health` -> `{"status":"ok","platform":"windows",...}`.
+   - Listens on `http://localhost:5000`.
+   - Swagger UI: `http://localhost:5000/swagger`.
+   - Health check: `GET http://localhost:5000/health` -> `{"status":"ok","platform":"windows",...}`.
 
-2. Run the backend unit test suite (`xUnit`):
+2. Run backend unit tests (`xUnit` — 42 tests covering snap math, scroll limits, DWM padding, and scene restoration):
    ```powershell
    cd backend
    dotnet test Scepter.sln
@@ -112,7 +204,7 @@ flowchart LR
 
 ## Frontend Setup & Run (`/frontend`)
 
-1. Open a second terminal in `frontend`, install dependencies, and start the dev server:
+1. Open a second terminal in `frontend`, install dependencies, and start the development server:
    ```powershell
    cd frontend
    npm install
@@ -120,55 +212,62 @@ flowchart LR
    ```
    - Serves at `http://localhost:4200`.
 
-2. Run the frontend unit tests (`Vitest`):
+2. Run frontend unit tests (`Vitest` — 27 tests covering pose math, gesture state machine, Rock-On/Shaka detection, and store actions):
    ```powershell
    cd frontend
    npm test
+   ```
+
+3. Build production bundle (tested with Angular 18):
+   ```powershell
+   cd frontend
+   npm run build
    ```
 
 ---
 
 ## Tunable Parameters (Live in Settings Drawer)
 
-Open the **Settings** drawer (`S` key or top-right sliders icon) to tune all gesture and scroll parameters live (persisted to `localStorage` and resettable via **Reset to defaults**):
+Open the **Settings** drawer (`S` key or top-right sliders icon) to adjust parameters live (persisted to `localStorage` and resettable via **Reset to defaults**):
 
 | Parameter | Default | Description |
 | :--- | :--- | :--- |
-| **Live control (Win32)** | `false` (Off) | Gates all `/grab`, `/move`, `/snap`, `/resize`, `/cycle`, and `/scroll` calls inside `WindowApiService`. Health polling always runs. |
+| **Live control (Win32)** | `false` (Off) | Gates all OS window actions. When off, W.A.V.E operates safely in Practice mode. |
 | **Cursor Smoothing Filter** | `Lerp` | Switch live between Linear Interpolation (`Lerp`) and adaptive `One Euro (1€)` filtering. |
-| **Lerp Smoothing Alpha** | `0.35` | `smoothed = prev + (raw - prev) * alpha`. Applied to both pinch and V-sign midpoints. |
-| **Pinch Enter Threshold** | `0.28` | Thumb-to-index distance normalized by hand size (wrist `#0` to middle MCP `#9`). |
+| **Lerp Smoothing Alpha** | `0.35` | `smoothed = prev + (raw - prev) * alpha`. Applied to pinch and cursor coordinates. |
+| **Pinch Enter Threshold** | `0.28` | Normalized thumb-to-index distance (wrist `#0` to middle MCP `#9`). |
 | **Hysteresis Exit Multiplier** | `1.50x` | Exit threshold = `enter * 1.50` (`0.42`). Eliminates pinch boundary flicker. |
 | **Edge Snap Zone Width** | `20%` | Screen edge margin (`X < 0.20` Left, `X > 0.80` Right, `Y < 0.20` Top Maximize, plus 4 corners). |
-| **Zone Arm Dwell Time** | `150 ms` | Time the pinched cursor must dwell inside an edge zone before it arms. |
-| **Snap Release Cooldown** | `800 ms` | Minimum time between consecutive snap actions. |
-| **Left/Right Split Ratio** | `50%` | Width ratio (`0.30` – `0.70`) sent to `POST /api/window/snap`. |
-| **V-Sign Scroll Enabled** | `true` | Enables peace-sign (`isVSign`) vertical scrolling. Pinch always takes priority. |
-| **Scroll Direction** | `Natural` | `Natural` (hand up = scroll up, positive wheel delta) or `Inverted` (`invertScroll: true`). |
-| **Scroll Gain** | `4000` | Wheel units per normalized frame height (`~1000` wheel units for a 25% vertical stroke, with `|dy|^1.2` curve). |
-| **Scroll Deadzone** | `0.002` | Minimum per-frame normalized `|dy|` before accumulating wheel movement. |
-| **V-Sign Spread Min** | `0.35` | Minimum normalized distance `dist(8,12) / dist(0,9)` separating a V-sign from two fingers held together. |
-| **Scroll Enter / Exit Hold** | `120 ms` / `150 ms` | Dwell times to enter and exit `SCROLLING` without flicker. Batching sends at most ~30 requests/sec clamped to `±1200`. |
+| **Zone Arm Dwell Time** | `150 ms` | Dwell duration in an edge zone before arming snap. |
+| **Left/Right Split Ratio** | `50%` | Width split ratio (`0.30` – `0.70`) sent to `POST /api/window/snap`. |
+| **V-Sign Scroll Enabled** | `true` | Enables peace-sign (`isVSign`) vertical scrolling. |
+| **Scroll Direction** | `Natural` | `Natural` (hand up = scroll up) or `Inverted` (`invertScroll: true`). |
+| **Scroll Gain** | `4000` | Wheel units per normalized frame height (clamped to `±1200` per request). |
+| **V-Sign Spread Min** | `0.35` | Normalized distance `dist(8,12) / dist(0,9)` separating a V-sign from closed fingers. |
+| **Wave Scenes Enabled** | `true` | Enables multi-window scenes capture and restoration. |
+| **Scene Hold Time** | `400 ms` | Dwell duration required to trigger 🤘 Rock-On or 🤙 Shaka scene signs. |
+| **Scene Cooldown** | `1500 ms` | Cooldown preventing repeated scene launches after a sign trigger. |
 
 ---
 
 ## 60-Second Demo Script
 
-1. **0:00 – 0:15 | Safe Practice Checklist (`0/4` -> `4/4`):**
-   Open `http://localhost:4200`. Point out the **Backend connected** pill and **Live control off** (Practice mode). Click **Start camera** (or **Simulate**). Perform **Hover** (open hand), **Grab** (pinch thumb & index), **Snap to edge** (drag to left edge until armed and release), and **Scroll** (hold V-sign and move up/down, or hold `Shift` + move mouse in Simulation mode). Watch all 4 practice cards tick green (`Practice · 4/4`).
-2. **0:15 – 0:35 | Live Window Grab & Edge Snapping:**
-   Open a scrollable window (such as Notepad or a documentation page) alongside W.A.V.E. Click **Live control off -> Live control on** in the header. Pinch to grab the target window, drag into the left zone until **ARMED · LEFT** appears with the window title inside the ghost preview, and release — the window snaps flush to the left half of the display without covering the taskbar (`rcWork`) or leaving DWM border gaps.
-3. **0:35 – 0:50 | V-Sign Touchless Scrolling:**
-   Point at the scrollable window and hold a peace sign (**V-sign**: index & middle extended and spread, ring & pinky curled). On entry, the Windows cursor jumps once to your hand's position (`begin: true`), the HUD displays **SCROLL** with highlighted index/middle fingertips and a speed-proportional directional arrow, and moving your hand up/down smoothly scrolls the window.
-4. **0:50 – 1:00 | Live Calibration & Action Log:**
-   Press `S` to open the **W.A.V.E Settings** drawer. Flip **Scroll Direction** between **Natural** and **Inverted**, adjust **Scroll Gain**, and inspect the timestamped **Recent Action Log**.
+1. **0:00 – 0:10 | Landing Page & Camera Stage:**
+   Open `http://localhost:4200`. View the sleek dark landing card and click **Begin**. The camera starts automatically, filling the full-viewport interactive stage.
+2. **0:10 – 0:25 | "Six Moves to Master" Practice:**
+   Scroll down slightly to view the **Six Moves to Master** panel. Test **01 Move** (open hand), **02 Pinch & grab** (pinch thumb + index), and **03 Snap to edge** (drag to side until armed and release). Watch the cards light up and the golden progress bar advance.
+3. **0:25 – 0:40 | Live Window Snapping & Touchless Scrolling:**
+   Toggle **Live control on** in the top header. Focus another window (e.g., Chrome or Notepad). Pinch to grab, drag to the left border until **ARMED · LEFT** shows with the window title, and release — the window snaps flush to the left screen half. Form a peace sign (**✌️ V-sign**) and move your hand up/down to scroll without touching the mouse.
+4. **0:40 – 0:55 | Wave Scenes Workspace Launcher:**
+   Press `W` to open the **Wave Scenes** panel. Select your apps (e.g., Chrome Left Half, Editor Right Half), pick the **🤘 Rock-On** sign, and click **Save Scene**. Minimize the windows, raise your hand, and hold the **🤘 Rock-On sign** — the canvas progress ring fills, un-maximizes both windows, and places them side-by-side on your screen.
+5. **0:55 – 1:00 | Document PiP & Settings:**
+   Click the **Picture-in-Picture** button in the header. The camera stage floats in an always-on-top window over your desktop so you can continue controlling windows from any app.
 
 ---
 
-## Known Limitations
+## Known Limitations & Tips
 
-1. **Windows 10/11 Only:** Native window positioning and `SendInput` mouse wheel injection require Win32 `user32.dll`, `dwmapi.dll`, and `shcore.dll`.
-2. **Browser Tab Must Stay Visible:** Browsers throttle `requestAnimationFrame` and camera streams in hidden tabs. W.A.V.E displays a warning banner if the tab is backgrounded; use the **Compact** toggle or **Picture-in-Picture (PiP)** button to keep the HUD visible while working in other apps.
-3. **Never Rename `<title>WAVEHUD</title>`:** Both `frontend/src/index.html` (`<title>WAVEHUD</title>`) and `backend/Scepter.Api/appsettings.json` (`"SelfWindowTitleMatch": "WAVEHUD"`) must match so the backend never grabs or snaps the W.A.V.E HUD window itself.
-4. **Elevated (Administrator) Windows (UIPI):** Windows User Interface Privilege Isolation prevents a normal-privilege process from moving or injecting `SendInput` wheel events into an elevated Administrator window. Run the backend in an Administrator terminal if you want to snap or scroll elevated apps.
-5. **Lighting:** Standard indoor lighting works best for MediaPipe hand landmark tracking; in low light or on machines without a webcam, use **Simulate** mode.
+1. **Windows 10/11 for Native Win32 Actions:** Physical desktop window positioning and mouse wheel injection require Windows OS APIs (`user32.dll`, `dwmapi.dll`).
+2. **Never Change `<title>WAVEHUD</title>`:** Both `frontend/src/index.html` (`<title>WAVEHUD</title>`) and `backend/Scepter.Api/appsettings.json` (`"SelfWindowTitleMatch": "WAVEHUD"`) must match so W.A.V.E never grabs or snaps its own window.
+3. **Elevated (Administrator) Windows (UIPI):** Windows User Interface Privilege Isolation blocks non-elevated processes from sending inputs or moving elevated admin windows. To manage admin windows, run `dotnet run` in an Administrator PowerShell terminal.
+4. **Background Tab Throttling:** Chrome and Edge throttle webcam and `requestAnimationFrame` processing when tabs are hidden. Keep W.A.V.E visible on screen, or click the **Picture-in-Picture (PiP)** button to pop out an always-on-top floating HUD.
