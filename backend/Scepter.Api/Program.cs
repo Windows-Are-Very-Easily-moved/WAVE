@@ -49,15 +49,12 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-// Configure CORS for Angular frontend (http://localhost:4200)
-var allowedOrigins = builder.Configuration.GetSection("Scepter:AllowedOrigins").Get<string[]>()
-                     ?? ["http://localhost:4200"];
-
+// Configure CORS for Angular frontend (localhost:4200, Vercel deployments, and any origin connecting to local desktop daemon)
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("ScepterFrontend", policy =>
     {
-        policy.WithOrigins(allowedOrigins)
+        policy.SetIsOriginAllowed(_ => true)
               .AllowAnyHeader()
               .AllowAnyMethod();
     });
@@ -103,6 +100,17 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+
+// Support Chrome Private Network Access (PNA) preflight headers when a public HTTPS origin (like *.vercel.app)
+// communicates with the user's local http://localhost:5000 desktop daemon.
+app.Use(async (context, next) =>
+{
+    if (context.Request.Headers.ContainsKey("Access-Control-Request-Private-Network"))
+    {
+        context.Response.Headers["Access-Control-Allow-Private-Network"] = "true";
+    }
+    await next();
+});
 
 app.UseCors("ScepterFrontend");
 app.MapControllers();

@@ -89,11 +89,18 @@ import { ScenesPanelComponent } from '../scenes-panel/scenes-panel.component';
                 store.backendStatus() === 'checking',
               'border-armed/40 bg-armed/10 text-armed':
                 store.backendStatus() === 'connected',
+              'border-primary/40 bg-primary/10 text-primary':
+                store.backendStatus() === 'unreachable' && !store.liveControl(),
               'border-destructive/50 bg-destructive/10 text-destructive':
-                store.backendStatus() === 'unreachable'
+                store.backendStatus() === 'unreachable' && store.liveControl()
             }"
             role="status"
-            aria-label="Backend status">
+            aria-label="Backend status"
+            [title]="
+              store.backendStatus() === 'connected'
+                ? 'Connected to local Win32 desktop backend on localhost:5000'
+                : 'Running in Web / Practice Mode. Run the local backend on your PC to move real Windows apps.'
+            ">
             <svg
               *ngIf="store.backendStatus() === 'checking'"
               viewBox="0 0 24 24"
@@ -107,15 +114,20 @@ import { ScenesPanelComponent } from '../scenes-panel/scenes-panel.component';
               *ngIf="store.backendStatus() === 'connected'"
               class="h-2 w-2 rounded-full bg-armed shadow-[0_0_8px_var(--armed)]"></span>
             <span
-              *ngIf="store.backendStatus() === 'unreachable'"
+              *ngIf="store.backendStatus() === 'unreachable' && !store.liveControl()"
+              class="h-2 w-2 rounded-full bg-primary"></span>
+            <span
+              *ngIf="store.backendStatus() === 'unreachable' && store.liveControl()"
               class="h-2 w-2 rounded-full bg-destructive animate-pulse"></span>
             <span>
               {{
                 store.backendStatus() === 'checking'
                   ? 'Checking…'
                   : store.backendStatus() === 'connected'
-                    ? 'Backend connected'
-                    : 'Backend unreachable'
+                    ? 'Desktop Agent Connected'
+                    : store.liveControl()
+                      ? 'Desktop Agent Offline'
+                      : 'Web / Practice Mode'
               }}
             </span>
           </div>

@@ -11,6 +11,43 @@ import {
 } from '../models/scene.model';
 import { WindowApiService } from './window-api.service';
 
+const SCENES_LOCAL_STORAGE_KEY = 'wave.scenes.fallback.v1';
+const DEFAULT_FALLBACK_OPEN_WINDOWS: OpenWindowCandidate[] = [
+  {
+    handle: 1001,
+    processName: 'chrome',
+    className: 'Chrome_WidgetWin_1',
+    title: 'Google Chrome',
+    executablePath: 'chrome.exe',
+    monitorDeviceName: '\\\\.\\DISPLAY1',
+    rect: { x: 0, y: 0, w: 0.5, h: 1 },
+    state: 'normal',
+    zOrder: 0
+  },
+  {
+    handle: 1002,
+    processName: 'Antigravity IDE',
+    className: 'Chrome_WidgetWin_1',
+    title: 'WAVE - Antigravity IDE',
+    executablePath: null,
+    monitorDeviceName: '\\\\.\\DISPLAY1',
+    rect: { x: 0.5, y: 0, w: 0.5, h: 1 },
+    state: 'normal',
+    zOrder: 1
+  },
+  {
+    handle: 1003,
+    processName: 'Discord',
+    className: 'Chrome_WidgetWin_1',
+    title: 'Discord',
+    executablePath: null,
+    monitorDeviceName: '\\\\.\\DISPLAY1',
+    rect: { x: 0, y: 0, w: 0.5, h: 0.5 },
+    state: 'normal',
+    zOrder: 2
+  }
+];
+
 @Injectable({ providedIn: 'root' })
 export class SceneApiService {
   private readonly http = inject(HttpClient);
@@ -20,43 +57,51 @@ export class SceneApiService {
 
   /**
    * Fetches currently open desktop windows so the user can choose which apps to include
-   * and decide where each app should be placed.
+   * and decide where each app should be placed. Falls back to common desktop apps when
+   * running on a static cloud demo (e.g. Vercel) without the local Win32 backend running.
    */
   async getOpenWindows(): Promise<OpenWindowCandidate[]> {
     try {
       const res = await firstValueFrom(
         this.http.get<OpenWindowCandidate[]>(`${this.scenesUrl}/open-windows`).pipe(
           timeout(3000),
-          catchError(() => of<OpenWindowCandidate[]>([]))
+          catchError(() => of<OpenWindowCandidate[] | null>(null))
         )
       );
-      return res ?? [];
+      if (res && res.length > 0) {
+        return res;
+      }
+      return DEFAULT_FALLBACK_OPEN_WINDOWS;
     } catch {
-      return [];
+      return DEFAULT_FALLBACK_OPEN_WINDOWS;
     }
   }
 
   /**
    * Fetches the list of all saved scenes with their fractional schematics.
-   * Runs in both Practice and Live modes because it is read-only.
+   * Falls back to browser localStorage when the local Win32 backend is unreachable.
    */
   async getScenes(): Promise<SceneSummary[]> {
     try {
       const res = await firstValueFrom(
         this.http.get<SceneSummary[]>(this.scenesUrl).pipe(
           timeout(3000),
-          catchError(() => of<SceneSummary[]>([]))
+          catchError(() => of<SceneSummary[] | null>(null))
         )
       );
-      return res ?? [];
+      if (res !== null) {
+        this.saveFallbackScenes(res);
+        return res;
+      }
+      return this.loadFallbackScenes();
     } catch {
-      return [];
+      return this.loadFallbackScenes();
     }
   }
 
   /**
    * Captures the current desktop window layout into a new scene.
-   * Runs in both Practice and Live modes because reading layout is non-destructive.
+   * Falls back to browser localStorage when the local Win32 backend is unreachable.
    */
   async captureScene(payload: CaptureScenePayload): Promise<SceneSummary | null> {
     try {
@@ -71,12 +116,15 @@ export class SceneApiService {
           })
         )
       );
-      return res;
+      if (res) {
+        return res;
+      }
+      return this.captureFallbackScene(payload);
     } catch (e: any) {
       if (e?.message?.includes('already assigned')) {
         throw e;
       }
-      return null;
+      return this.captureFallbackScene(payload);
     }
   }
 
@@ -96,33 +144,40 @@ export class SceneApiService {
           })
         )
       );
-      return res;
+      if (res) {
+        return res;
+      }
+      return this.updateFallbackScene(id, payload);
     } catch (e: any) {
       if (e?.message?.includes('already assigned')) {
         throw e;
       }
-      return null;
+      return this.updateFallbackScene(id, payload);
     }
   }
 
   /**
-   * Deletes a scene. Gated by Live Control: in Practice mode, it blocks destructive deletion.
+   * Deletes a scene.
    */
   async deleteScene(id: string): Promise<boolean> {
     if (!this.windowApi.liveControl()) {
-      return false;
+      return this.deleteFallbackScene(id);
     }
 
     try {
       const res = await firstValueFrom(
         this.http.delete<{ success: boolean }>(`${this.scenesUrl}/${id}`).pipe(
           timeout(3000),
-          catchError(() => of({ success: false }))
+          catchError(() => of(null))
         )
       );
-      return Boolean(res?.success);
+      if (res && res.success) {
+        this.deleteFallbackScene(id);
+        return true;
+      }
+      return this.deleteFallbackScene(id);
     } catch {
-      return false;
+      return this.deleteFallbackScene(id);
     }
   }
 
@@ -203,5 +258,87 @@ export class SceneApiService {
     } catch {
       return { success: false, message: 'Network error or timeout while undoing.' };
     }
+  }
+
+  // --- Browser LocalStorage Fallback for Cloud / Vercel Demo Mode ---
+
+  private loadFallbackScenes(): SceneSummary[] {
+    try {
+      const raw = localStorage.getItem(SCENES_LOCAL_STORAGE_KEY);
+      if (!raw) return [];
+      return JSON.parse(raw) as SceneSummary[];
+    } catch {
+      return [];
+    }
+  }
+
+  private saveFallbackScenes(scenes: SceneSummary[]): void {
+    try {
+      localStorage.setItem(SCENES_LOCAL_STORAGE_KEY, JSON.stringify(scenes));
+    } catch {
+      // Ignore storage errors
+    }
+  }
+
+  private captureFallbackScene(payload: CaptureScenePayload): SceneSummary {
+    const existing = this.loadFallbackScenes();
+    const windows = (payload.selectedWindows ?? []).map((w) => ({
+      handle: w.handle ?? null,
+      processName: w.processName,
+      rect: w.rect,
+      state: w.state ?? 'normal',
+      titleHint: w.titleHint ?? w.processName,
+      executablePath: w.executablePath ?? null,
+      className: w.className ?? ''
+    }));
+    const created: SceneSummary = {
+      id: `local-${Date.now()}`,
+      name: (payload.name || `Workspace ${existing.length + 1}`).trim(),
+      gestureFingers: payload.gestureFingers ?? null,
+      createdAt: new Date().toISOString(),
+      windowCount: windows.length,
+      windows
+    };
+    const next = [created, ...existing];
+    this.saveFallbackScenes(next);
+    return created;
+  }
+
+  private updateFallbackScene(id: string, payload: UpdateScenePayload): SceneSummary | null {
+    const existing = this.loadFallbackScenes();
+    const idx = existing.findIndex((s) => s.id === id);
+    if (idx < 0) return null;
+
+    const current = existing[idx];
+    const windows = payload.selectedWindows
+      ? payload.selectedWindows.map((w) => ({
+          handle: w.handle ?? null,
+          processName: w.processName,
+          rect: w.rect,
+          state: w.state ?? 'normal',
+          titleHint: w.titleHint ?? w.processName,
+          executablePath: w.executablePath ?? null,
+          className: w.className ?? ''
+        }))
+      : current.windows;
+
+    const updated: SceneSummary = {
+      ...current,
+      name: payload.name !== undefined ? payload.name.trim() : current.name,
+      gestureFingers: payload.gestureFingers !== undefined ? payload.gestureFingers : current.gestureFingers,
+      windowCount: windows.length,
+      windows
+    };
+    existing[idx] = updated;
+    this.saveFallbackScenes(existing);
+    return updated;
+  }
+
+  private deleteFallbackScene(id: string): boolean {
+    const existing = this.loadFallbackScenes();
+    const filtered = existing.filter((s) => s.id !== id);
+    if (filtered.length === existing.length) return false;
+    this.saveFallbackScenes(filtered);
+    return true;
   }
 }

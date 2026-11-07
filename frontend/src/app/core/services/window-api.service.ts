@@ -46,10 +46,13 @@ export class WindowApiService {
 
   setLiveControl(enabled: boolean): void {
     this.liveControl.set(enabled);
+    if (enabled) {
+      void this.checkHealthAndActiveWindow();
+    }
   }
 
   toggleLiveControl(): void {
-    this.liveControl.update((v) => !v);
+    this.setLiveControl(!this.liveControl());
   }
 
   startHealthPolling(): void {
@@ -57,7 +60,15 @@ export class WindowApiService {
     const startLoop = () => {
       void this.checkHealthAndActiveWindow();
       this.pollHandle = setInterval(() => {
-        void this.checkHealthAndActiveWindow();
+        // When hosted on a remote domain (e.g. *.vercel.app) and Live Control is OFF,
+        // avoid spamming localhost:5000 every 3 seconds in the browser console.
+        const isLocalhost =
+          typeof window === 'undefined' ||
+          window.location.hostname === 'localhost' ||
+          window.location.hostname === '127.0.0.1';
+        if (isLocalhost || this.liveControl() || this.connectionState() === 'connected') {
+          void this.checkHealthAndActiveWindow();
+        }
       }, 3000);
     };
     if (this.ngZone) {
