@@ -154,3 +154,4 @@ public sealed class SceneMatcherTests
         Assert.Single(emptyCandidatesResult.Missing);
     }
 }
+

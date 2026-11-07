@@ -159,3 +159,4 @@ public static class SceneMatcher
         return (double)common / total;
     }
 }
+
