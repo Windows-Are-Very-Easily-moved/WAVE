@@ -67,6 +67,15 @@ public sealed class ScenesController : ControllerBase
         return Ok(_sceneService.GetScenes());
     }
 
+    [HttpGet("open-windows")]
+    public IActionResult GetOpenWindows()
+    {
+        var check = CheckPreconditions();
+        if (check != null) return check;
+
+        return Ok(_sceneService.GetOpenWindows());
+    }
+
     [HttpGet("{id:guid}")]
     public IActionResult GetScene(Guid id)
     {

@@ -58,6 +58,7 @@ describe('WaveViewModelStore', () => {
   };
   let mockSceneApiService: {
     getScenes: ReturnType<typeof vi.fn>;
+    getOpenWindows: ReturnType<typeof vi.fn>;
     captureScene: ReturnType<typeof vi.fn>;
     updateScene: ReturnType<typeof vi.fn>;
     deleteScene: ReturnType<typeof vi.fn>;
@@ -86,6 +87,7 @@ describe('WaveViewModelStore', () => {
 
     mockSceneApiService = {
       getScenes: vi.fn(() => Promise.resolve<SceneSummary[]>([])),
+      getOpenWindows: vi.fn(() => Promise.resolve([])),
       captureScene: vi.fn(() => Promise.resolve<SceneSummary>({
         id: 'scene-1',
         name: 'Work Layout',

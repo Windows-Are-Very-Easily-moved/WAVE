@@ -5,7 +5,12 @@ import { GestureEngineService } from './gesture-engine.service';
 import { BackendConnectionState, WindowApiService } from './window-api.service';
 import { SettingsService } from './settings.service';
 import { SceneApiService } from './scene-api.service';
-import { SceneApplyResult, SceneSummary } from '../models/scene.model';
+import {
+  OpenWindowCandidate,
+  SceneApplyResult,
+  SceneSummary,
+  SelectedSceneWindowInput
+} from '../models/scene.model';
 import { SceneGestureDetector } from '../utils/scene-gesture.detector';
 import {
   FilterType,
@@ -103,6 +108,8 @@ export class WaveViewModelStore {
   readonly scenesEnabled = computed<boolean>(() => this.settings().scenesEnabled);
   readonly scenes = signal<SceneSummary[]>([]);
   readonly scenesLoading = signal<boolean>(false);
+  readonly openWindowCandidates = signal<OpenWindowCandidate[]>([]);
+  readonly openWindowsLoading = signal<boolean>(false);
   readonly scenesOpen = signal<boolean>(false);
   readonly undoAvailable = signal<boolean>(false);
   readonly lastSceneResult = signal<SceneApplyResult | null>(null);
@@ -295,6 +302,20 @@ export class WaveViewModelStore {
   toggleSaveSceneModal(force?: boolean): void {
     const next = force !== undefined ? force : !this.saveSceneModalOpen();
     this.saveSceneModalOpen.set(next);
+    if (next) {
+      void this.loadOpenWindows();
+    }
+  }
+
+  async loadOpenWindows(): Promise<void> {
+    if (!this.settings().scenesEnabled) return;
+    this.openWindowsLoading.set(true);
+    try {
+      const list = await this.sceneApi.getOpenWindows();
+      this.openWindowCandidates.set(list);
+    } finally {
+      this.openWindowsLoading.set(false);
+    }
   }
 
   async loadScenes(): Promise<void> {
@@ -308,9 +329,16 @@ export class WaveViewModelStore {
     }
   }
 
-  async captureCurrentScene(name?: string, gestureFingers?: 3 | 4 | null): Promise<boolean> {
+  async captureCurrentScene(
+    name?: string,
+    gestureFingers?: 3 | 4 | null,
+    selectedWindows?: SelectedSceneWindowInput[]
+  ): Promise<boolean> {
     try {
-      const captured = await this.sceneApi.captureScene({ name, gestureFingers });
+      const payload = selectedWindows !== undefined
+        ? { name, gestureFingers, selectedWindows }
+        : { name, gestureFingers };
+      const captured = await this.sceneApi.captureScene(payload);
       if (captured) {
         this.pushToast(
           'Scene saved',
@@ -380,9 +408,17 @@ export class WaveViewModelStore {
     }
   }
 
-  async updateScene(id: string, name?: string, gestureFingers?: 3 | 4 | null): Promise<boolean> {
+  async updateScene(
+    id: string,
+    name?: string,
+    gestureFingers?: 3 | 4 | null,
+    selectedWindows?: SelectedSceneWindowInput[]
+  ): Promise<boolean> {
     try {
-      const updated = await this.sceneApi.updateScene(id, { name, gestureFingers });
+      const payload = selectedWindows !== undefined
+        ? { name, gestureFingers, selectedWindows }
+        : { name, gestureFingers };
+      const updated = await this.sceneApi.updateScene(id, payload);
       if (updated) {
         this.pushToast('Scene updated', `'${updated.name}' saved.`, 'info');
         await this.loadScenes();

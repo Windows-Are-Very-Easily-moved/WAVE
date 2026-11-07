@@ -5,6 +5,7 @@ namespace Scepter.Api.Services;
 public interface ISceneService
 {
     IReadOnlyList<SceneSummaryDto> GetScenes();
+    IReadOnlyList<OpenWindowCandidateDto> GetOpenWindows();
     Scene? GetSceneById(Guid id);
     SceneSummaryDto CaptureScene(CaptureSceneRequest request);
     SceneSummaryDto? UpdateScene(Guid id, UpdateSceneRequest request);

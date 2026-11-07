@@ -19,6 +19,20 @@ public static class SceneLayoutMath
 {
     public const double MinFractionalSize = 0.05; // Minimum 5% of monitor width/height
 
+    public static WindowFractionalRect ClampFractionalRect(WindowFractionalRect frac)
+    {
+        double w = Math.Clamp(frac.W, MinFractionalSize, 1.0);
+        double h = Math.Clamp(frac.H, MinFractionalSize, 1.0);
+        double x = Math.Clamp(frac.X, 0.0, Math.Max(0.0, 1.0 - w));
+        double y = Math.Clamp(frac.Y, 0.0, Math.Max(0.0, 1.0 - h));
+        return new WindowFractionalRect(
+            Math.Round(x, 4),
+            Math.Round(y, 4),
+            Math.Round(w, 4),
+            Math.Round(h, 4)
+        );
+    }
+
     /// <summary>
     /// Converts a physical window rectangle into fractional [0..1] coordinates relative to a monitor work area.
     /// </summary>

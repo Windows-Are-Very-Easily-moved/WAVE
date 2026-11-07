@@ -72,6 +72,11 @@ public sealed class SceneService : ISceneService
         }
     }
 
+    public IReadOnlyList<OpenWindowCandidateDto> GetOpenWindows()
+    {
+        return CaptureOpenDesktopWindowDtos();
+    }
+
     public Scene? GetSceneById(Guid id)
     {
         EnsureLoaded();
@@ -97,7 +102,9 @@ public sealed class SceneService : ISceneService
 
         ValidateGestureFingers(request.GestureFingers, excludeSceneId: null);
 
-        var capturedWindows = CaptureCurrentDesktopWindows();
+        List<SceneWindow> capturedWindows = request.SelectedWindows != null && request.SelectedWindows.Count > 0
+            ? BuildSelectedSceneWindows(request.SelectedWindows)
+            : CaptureCurrentDesktopWindows();
 
         var scene = new Scene
         {
@@ -154,6 +161,11 @@ public sealed class SceneService : ISceneService
                 scene.GestureFingers = request.GestureFingers;
             }
 
+            if (request.SelectedWindows != null)
+            {
+                scene.Windows = BuildSelectedSceneWindows(request.SelectedWindows);
+            }
+
             SaveScenesToDisk();
             _logger.LogInformation("Updated scene '{SceneName}' (ID: {SceneId}). Gesture: {Gesture}",
                 scene.Name, scene.Id, scene.GestureFingers?.ToString() ?? "none");
@@ -203,6 +215,35 @@ public sealed class SceneService : ISceneService
 
         var candidates = GetOpenCandidateWindows();
         var matchResult = SceneMatcher.MatchWindows(scene.Windows, candidates);
+
+        // Auto-Launch missing windows if they have an executable path or known app launcher
+        if (matchResult.Missing.Count > 0)
+        {
+            int launchedCount = 0;
+            foreach (var missingWindow in matchResult.Missing)
+            {
+                if (TryLaunchWindowProcess(missingWindow))
+                {
+                    launchedCount++;
+                }
+            }
+
+            if (launchedCount > 0)
+            {
+                var pollTimer = Stopwatch.StartNew();
+                while (pollTimer.ElapsedMilliseconds < 4000)
+                {
+                    Thread.Sleep(150);
+                    candidates = GetOpenCandidateWindows();
+                    matchResult = SceneMatcher.MatchWindows(scene.Windows, candidates);
+                    if (matchResult.Missing.Count == 0)
+                    {
+                        break;
+                    }
+                }
+                Thread.Sleep(180);
+            }
+        }
 
         var monitors = GetAvailableMonitors();
 
@@ -315,14 +356,19 @@ public sealed class SceneService : ISceneService
             }
         }
 
-        // 3. Apply Z-Order back-to-front without focus stealing (SWP_NOACTIVATE)
-        foreach (var item in successfullyPlaced.OrderByDescending(p => p.ZOrder))
+        // 3. Bring scene windows to the front in back-to-front Z-order
+        var orderedPlaced = successfullyPlaced.OrderByDescending(p => p.ZOrder).ToList();
+        foreach (var item in orderedPlaced)
         {
             NativeMethods.SetWindowPos(
                 item.Hwnd,
                 NativeMethods.HWND_TOP,
                 0, 0, 0, 0,
-                NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE);
+                NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_SHOWWINDOW);
+        }
+        if (orderedPlaced.Count > 0)
+        {
+            NativeMethods.SetForegroundWindow(orderedPlaced[^1].Hwnd);
         }
 
         // 4. Missing windows
@@ -527,6 +573,7 @@ public sealed class SceneService : ISceneService
 
             string title = NativeMethods.GetWindowTitle(hWnd);
             string processName = GetProcessName(hWnd);
+            string? executablePath = GetExecutablePath(hWnd, processName, title);
 
             // Log window titles only at Debug for privacy protection
             _logger.LogDebug("Captured window '{Title}' (process: {Process}, class: {Class}, state: {State}) on {Monitor} at {Rect}",
@@ -540,6 +587,7 @@ public sealed class SceneService : ISceneService
                 ProcessName = processName,
                 ClassName = className,
                 TitleHint = titleHint,
+                ExecutablePath = executablePath,
                 MonitorDeviceName = monitorDeviceName,
                 Rect = fractionalRect,
                 State = windowState,
@@ -550,6 +598,342 @@ public sealed class SceneService : ISceneService
         });
 
         return windows;
+    }
+
+    private List<OpenWindowCandidateDto> CaptureOpenDesktopWindowDtos()
+    {
+        var list = new List<OpenWindowCandidateDto>();
+        if (!OperatingSystem.IsWindows()) return list;
+
+        var availableMonitors = GetAvailableMonitors();
+        int zOrder = 0;
+
+        NativeMethods.EnumInteractiveWindows((hWnd, _) =>
+        {
+            if (hWnd == IntPtr.Zero || !NativeMethods.IsWindow(hWnd)) return true;
+            if (!NativeMethods.IsWindowVisible(hWnd) && !NativeMethods.IsIconic(hWnd)) return true;
+            if (NativeMethods.IsWindowCloaked(hWnd)) return true;
+            if (_tracker.IsSelfWindow(hWnd)) return true;
+
+            int exStyle = SceneNativeMethods.GetWindowLong(hWnd, NativeMethods.GWL_EXSTYLE);
+            if ((exStyle & NativeMethods.WS_EX_TOOLWINDOW) != 0) return true;
+
+            string className = NativeMethods.GetWindowClass(hWnd);
+            if (string.IsNullOrWhiteSpace(className) ||
+                string.Equals(className, "Progman", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(className, "Shell_TrayWnd", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(className, "Shell_SecondaryTrayWnd", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(className, "WorkerW", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            string title = NativeMethods.GetWindowTitle(hWnd);
+            if (string.IsNullOrWhiteSpace(title)) return true;
+
+            var placement = WINDOWPLACEMENT.Create();
+            if (!SceneNativeMethods.GetWindowPlacement(hWnd, ref placement)) return true;
+
+            string windowState = SceneWindowState.Normal;
+            if (placement.showCmd == NativeMethods.SW_SHOWMAXIMIZED)
+            {
+                windowState = SceneWindowState.Maximized;
+            }
+            else if (placement.showCmd == NativeMethods.SW_SHOWMINIMIZED || NativeMethods.IsIconic(hWnd))
+            {
+                windowState = SceneWindowState.Minimized;
+            }
+
+            RECT visibleRect;
+            int hr = NativeMethods.DwmGetWindowAttribute(
+                hWnd,
+                NativeMethods.DWMWA_EXTENDED_FRAME_BOUNDS,
+                out RECT dwmRect,
+                Marshal.SizeOf<RECT>());
+
+            if (hr == 0 && dwmRect.Width > 0 && dwmRect.Height > 0 && !NativeMethods.IsIconic(hWnd))
+            {
+                visibleRect = dwmRect;
+            }
+            else if (!NativeMethods.IsIconic(hWnd) && NativeMethods.GetWindowRect(hWnd, out RECT winRect) && winRect.Width > 0 && winRect.Height > 0)
+            {
+                visibleRect = winRect;
+            }
+            else if (placement.rcNormalPosition.Width > 0 && placement.rcNormalPosition.Height > 0)
+            {
+                visibleRect = placement.rcNormalPosition;
+            }
+            else
+            {
+                return true;
+            }
+
+            IntPtr hMonitor = NativeMethods.MonitorFromWindow(hWnd, NativeMethods.MONITOR_DEFAULTTONEAREST);
+            var monitorInfo = MONITORINFOEX.Create();
+            string monitorDeviceName = @"\\.\DISPLAY1";
+            RECT workArea = new RECT(0, 0, 1920, 1040);
+
+            if (hMonitor != IntPtr.Zero && SceneNativeMethods.GetMonitorInfo(hMonitor, ref monitorInfo))
+            {
+                monitorDeviceName = monitorInfo.szDevice;
+                workArea = monitorInfo.rcWork;
+            }
+            else
+            {
+                var fallback = SceneLayoutMath.ResolveTargetMonitor(null, availableMonitors);
+                monitorDeviceName = fallback.DeviceName;
+                workArea = fallback.WorkArea;
+            }
+
+            var fractionalRect = SceneLayoutMath.PixelsToFractional(visibleRect, workArea);
+            string processName = GetProcessName(hWnd);
+            string? executablePath = GetExecutablePath(hWnd, processName, title);
+
+            list.Add(new OpenWindowCandidateDto(
+                Handle: hWnd.ToInt64(),
+                ProcessName: processName,
+                ClassName: className,
+                Title: title.Length > 120 ? title.Substring(0, 120) : title,
+                ExecutablePath: executablePath,
+                MonitorDeviceName: monitorDeviceName,
+                Rect: fractionalRect,
+                State: windowState,
+                ZOrder: zOrder++
+            ));
+
+            return true;
+        });
+
+        return list;
+    }
+
+    private List<SceneWindow> BuildSelectedSceneWindows(IReadOnlyList<SelectedSceneWindowInput> selectedInputs)
+    {
+        var openDtos = CaptureOpenDesktopWindowDtos();
+        var availableMonitors = GetAvailableMonitors();
+        var defaultMonitor = SceneLayoutMath.ResolveTargetMonitor(null, availableMonitors);
+
+        var result = new List<SceneWindow>();
+        int zOrder = 0;
+
+        foreach (var input in selectedInputs.Take(MaxWindowsPerScene))
+        {
+            OpenWindowCandidateDto? liveMatch = null;
+            if (input.Handle.HasValue && input.Handle.Value != 0)
+            {
+                liveMatch = openDtos.FirstOrDefault(w => w.Handle == input.Handle.Value);
+            }
+            if (liveMatch == null && !string.IsNullOrWhiteSpace(input.ProcessName))
+            {
+                liveMatch = openDtos.FirstOrDefault(w =>
+                    string.Equals(w.ProcessName, input.ProcessName, StringComparison.OrdinalIgnoreCase) &&
+                    (string.IsNullOrWhiteSpace(input.TitleHint) || string.Equals(w.Title, input.TitleHint, StringComparison.OrdinalIgnoreCase)));
+            }
+
+            string processName = !string.IsNullOrWhiteSpace(input.ProcessName)
+                ? input.ProcessName.Trim()
+                : liveMatch?.ProcessName ?? "unknown";
+
+            string className = !string.IsNullOrWhiteSpace(input.ClassName)
+                ? input.ClassName.Trim()
+                : liveMatch?.ClassName ?? string.Empty;
+
+            string titleHint = !string.IsNullOrWhiteSpace(input.TitleHint)
+                ? input.TitleHint.Trim()
+                : liveMatch?.Title ?? processName;
+
+            if (titleHint.Length > 120)
+            {
+                titleHint = titleHint.Substring(0, 120);
+            }
+
+            string? executablePath = !string.IsNullOrWhiteSpace(input.ExecutablePath)
+                ? input.ExecutablePath.Trim()
+                : liveMatch?.ExecutablePath;
+
+            string monitorDeviceName = !string.IsNullOrWhiteSpace(input.MonitorDeviceName)
+                ? input.MonitorDeviceName.Trim()
+                : liveMatch?.MonitorDeviceName ?? defaultMonitor.DeviceName;
+
+            var clampedRect = SceneLayoutMath.ClampFractionalRect(input.Rect ?? liveMatch?.Rect ?? new WindowFractionalRect(0, 0, 0.5, 1));
+
+            string state = !string.IsNullOrWhiteSpace(input.State)
+                ? input.State.Trim().ToLowerInvariant()
+                : SceneWindowState.Normal;
+
+            if (state != SceneWindowState.Normal && state != SceneWindowState.Maximized && state != SceneWindowState.Minimized)
+            {
+                state = SceneWindowState.Normal;
+            }
+
+            result.Add(new SceneWindow
+            {
+                ProcessName = processName,
+                ClassName = className,
+                TitleHint = titleHint,
+                ExecutablePath = executablePath,
+                MonitorDeviceName = monitorDeviceName,
+                Rect = clampedRect,
+                State = state,
+                ZOrder = zOrder++
+            });
+        }
+
+        return result;
+    }
+
+    private static string? GetExecutablePath(IntPtr hWnd, string processName, string title)
+    {
+        // Smart resolution for Windows 11 modern/UWP & system apps
+        if (string.Equals(processName, "ApplicationFrameHost", StringComparison.OrdinalIgnoreCase))
+        {
+            if (title.Contains("Calculator", StringComparison.OrdinalIgnoreCase)) return "calc.exe";
+            if (title.Contains("Settings", StringComparison.OrdinalIgnoreCase)) return "ms-settings:";
+            if (title.Contains("Microsoft Store", StringComparison.OrdinalIgnoreCase)) return "ms-windows-store:";
+
+            // Inspect child CoreWindow for underlying UWP process
+            NativeMethods.GetWindowThreadProcessId(hWnd, out uint hostPid);
+            string? childExe = null;
+            SceneNativeMethods.EnumChildWindows(hWnd, (childHwnd, _) =>
+            {
+                NativeMethods.GetWindowThreadProcessId(childHwnd, out uint childPid);
+                if (childPid != 0 && childPid != hostPid)
+                {
+                    childExe = QueryProcessImagePath(childPid);
+                    if (!string.IsNullOrWhiteSpace(childExe)) return false;
+                }
+                return true;
+            }, IntPtr.Zero);
+
+            if (!string.IsNullOrWhiteSpace(childExe))
+            {
+                if (childExe.Contains("CalculatorApp", StringComparison.OrdinalIgnoreCase)) return "calc.exe";
+                return childExe;
+            }
+        }
+
+        if (string.Equals(processName, "CalculatorApp", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(processName, "win32calc", StringComparison.OrdinalIgnoreCase))
+        {
+            return "calc.exe";
+        }
+        if (string.Equals(processName, "Notepad", StringComparison.OrdinalIgnoreCase))
+        {
+            return "notepad.exe";
+        }
+        if (string.Equals(processName, "explorer", StringComparison.OrdinalIgnoreCase))
+        {
+            return "explorer.exe";
+        }
+        if (string.Equals(processName, "WindowsTerminal", StringComparison.OrdinalIgnoreCase))
+        {
+            return "wt.exe";
+        }
+
+        NativeMethods.GetWindowThreadProcessId(hWnd, out uint pid);
+        if (pid != 0)
+        {
+            return QueryProcessImagePath(pid);
+        }
+
+        return null;
+    }
+
+    private static string? QueryProcessImagePath(uint pid)
+    {
+        IntPtr hProc = IntPtr.Zero;
+        try
+        {
+            hProc = SceneNativeMethods.OpenProcess(SceneNativeMethods.PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+            if (hProc != IntPtr.Zero)
+            {
+                var sb = new System.Text.StringBuilder(1024);
+                int size = sb.Capacity;
+                if (SceneNativeMethods.QueryFullProcessImageName(hProc, 0, sb, ref size))
+                {
+                    return sb.ToString();
+                }
+            }
+        }
+        catch
+        {
+            // Ignore access denied
+        }
+        finally
+        {
+            if (hProc != IntPtr.Zero)
+            {
+                SceneNativeMethods.CloseHandle(hProc);
+            }
+        }
+        return null;
+    }
+
+    private bool TryLaunchWindowProcess(SceneWindow target)
+    {
+        try
+        {
+            string? launchCommand = target.ExecutablePath;
+
+            if (string.IsNullOrWhiteSpace(launchCommand) ||
+                launchCommand.EndsWith("ApplicationFrameHost.exe", StringComparison.OrdinalIgnoreCase))
+            {
+                if (target.TitleHint.Contains("Calculator", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(target.ProcessName, "CalculatorApp", StringComparison.OrdinalIgnoreCase))
+                {
+                    launchCommand = "calc.exe";
+                }
+                else if (target.TitleHint.Contains("Settings", StringComparison.OrdinalIgnoreCase))
+                {
+                    launchCommand = "ms-settings:";
+                }
+                else if (string.Equals(target.ProcessName, "Notepad", StringComparison.OrdinalIgnoreCase))
+                {
+                    launchCommand = "notepad.exe";
+                }
+                else if (string.Equals(target.ProcessName, "explorer", StringComparison.OrdinalIgnoreCase))
+                {
+                    launchCommand = "explorer.exe";
+                }
+                else if (string.Equals(target.ProcessName, "WindowsTerminal", StringComparison.OrdinalIgnoreCase))
+                {
+                    launchCommand = "wt.exe";
+                }
+                else if (!string.IsNullOrWhiteSpace(target.ProcessName) &&
+                         !string.Equals(target.ProcessName, "ApplicationFrameHost", StringComparison.OrdinalIgnoreCase) &&
+                         !string.Equals(target.ProcessName, "unknown", StringComparison.OrdinalIgnoreCase))
+                {
+                    launchCommand = target.ProcessName + ".exe";
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(launchCommand))
+            {
+                return false;
+            }
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = launchCommand,
+                UseShellExecute = true
+            };
+
+            if (launchCommand.Contains('\\') && File.Exists(launchCommand))
+            {
+                psi.WorkingDirectory = Path.GetDirectoryName(launchCommand) ?? string.Empty;
+            }
+
+            Process.Start(psi);
+            _logger.LogInformation("Auto-launched process '{Process}' via '{Command}' for scene restoration.",
+                target.ProcessName, launchCommand);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not auto-launch process '{Process}' ('{ExecutablePath}').",
+                target.ProcessName, target.ExecutablePath);
+            return false;
+        }
     }
 
     private static string GetProcessName(IntPtr hWnd)
@@ -611,7 +995,7 @@ public sealed class SceneService : ISceneService
     private static SceneSummaryDto ToSummaryDto(Scene scene)
     {
         var windowSummaries = scene.Windows
-            .Select(w => new SceneWindowSummaryDto(w.ProcessName, w.Rect, w.State))
+            .Select(w => new SceneWindowSummaryDto(w.ProcessName, w.Rect, w.State, w.TitleHint, w.ExecutablePath, w.ClassName))
             .ToList();
 
         return new SceneSummaryDto(

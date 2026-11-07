@@ -21,6 +21,7 @@ public sealed class SceneWindow
     public string ProcessName { get; set; } = string.Empty;
     public string ClassName { get; set; } = string.Empty;
     public string TitleHint { get; set; } = string.Empty;
+    public string? ExecutablePath { get; set; }
     public string MonitorDeviceName { get; set; } = string.Empty;
     public WindowFractionalRect Rect { get; set; } = new(0, 0, 1, 1);
     public string State { get; set; } = SceneWindowState.Normal;
@@ -36,20 +37,48 @@ public sealed class Scene
     public List<SceneWindow> Windows { get; set; } = new();
 }
 
+public sealed record OpenWindowCandidateDto(
+    long Handle,
+    string ProcessName,
+    string ClassName,
+    string Title,
+    string? ExecutablePath,
+    string MonitorDeviceName,
+    WindowFractionalRect Rect,
+    string State,
+    int ZOrder
+);
+
+public sealed record SelectedSceneWindowInput(
+    long? Handle,
+    string ProcessName,
+    string? ClassName,
+    string? TitleHint,
+    string? ExecutablePath,
+    string? MonitorDeviceName,
+    WindowFractionalRect Rect,
+    string? State
+);
+
 public sealed record CaptureSceneRequest(
     string? Name,
-    int? GestureFingers
+    int? GestureFingers,
+    IReadOnlyList<SelectedSceneWindowInput>? SelectedWindows = null
 );
 
 public sealed record UpdateSceneRequest(
     string? Name,
-    int? GestureFingers
+    int? GestureFingers,
+    IReadOnlyList<SelectedSceneWindowInput>? SelectedWindows = null
 );
 
 public sealed record SceneWindowSummaryDto(
     string ProcessName,
     WindowFractionalRect Rect,
-    string State
+    string State,
+    string? TitleHint = null,
+    string? ExecutablePath = null,
+    string? ClassName = null
 );
 
 public sealed record SceneSummaryDto(

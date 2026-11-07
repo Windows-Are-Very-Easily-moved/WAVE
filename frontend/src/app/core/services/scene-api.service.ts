@@ -4,6 +4,7 @@ import { Observable, catchError, firstValueFrom, of, timeout } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import {
   CaptureScenePayload,
+  OpenWindowCandidate,
   SceneApplyResult,
   SceneSummary,
   UpdateScenePayload
@@ -16,6 +17,24 @@ export class SceneApiService {
   private readonly windowApi = inject(WindowApiService);
 
   private readonly scenesUrl = environment.apiBaseUrl.replace(/\/window\/?$/, '/scenes');
+
+  /**
+   * Fetches currently open desktop windows so the user can choose which apps to include
+   * and decide where each app should be placed.
+   */
+  async getOpenWindows(): Promise<OpenWindowCandidate[]> {
+    try {
+      const res = await firstValueFrom(
+        this.http.get<OpenWindowCandidate[]>(`${this.scenesUrl}/open-windows`).pipe(
+          timeout(3000),
+          catchError(() => of<OpenWindowCandidate[]>([]))
+        )
+      );
+      return res ?? [];
+    } catch {
+      return [];
+    }
+  }
 
   /**
    * Fetches the list of all saved scenes with their fractional schematics.
@@ -129,7 +148,7 @@ export class SceneApiService {
     try {
       const res = await firstValueFrom(
         this.http.post<SceneApplyResult>(`${this.scenesUrl}/${scene.id}/apply`, {}).pipe(
-          timeout(4000),
+          timeout(8000),
           catchError((err) =>
             of<SceneApplyResult>({
               scene,
