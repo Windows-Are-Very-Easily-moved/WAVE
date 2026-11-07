@@ -187,20 +187,21 @@ interface MoveDisplayCard {
             </svg>
           </button>
 
-          <!-- Sound Mute (M) -->
+          <!-- Sound Mute Toggle (M) -->
           <button
             type="button"
             (click)="store.toggleMute()"
             [attr.aria-pressed]="store.muted()"
             [attr.aria-label]="store.muted() ? 'Unmute sound cues' : 'Mute sound cues'"
-            title="Toggle sound cues (M)"
-            class="w-icon-btn">
+            [title]="store.muted() ? 'Sound is MUTED — click to unmute (M)' : 'Sound is ON — click to mute (M)'"
+            class="w-icon-btn"
+            [class.w-icon-btn-muted]="store.muted()">
             <svg *ngIf="!store.muted()" viewBox="0 0 24 24" class="w-ico" fill="none" stroke="currentColor" stroke-width="2">
               <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" stroke-linecap="round" stroke-linejoin="round" />
               <path d="M15.54 8.46a5 5 0 0 1 0 7.07" stroke-linecap="round" />
               <path d="M19.07 4.93a10 10 0 0 1 0 14.14" stroke-linecap="round" />
             </svg>
-            <svg *ngIf="store.muted()" viewBox="0 0 24 24" class="w-ico w-muted" fill="none" stroke="currentColor" stroke-width="2">
+            <svg *ngIf="store.muted()" viewBox="0 0 24 24" class="w-ico" fill="none" stroke="currentColor" stroke-width="2">
               <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" stroke-linecap="round" stroke-linejoin="round" />
               <line x1="22" y1="9" x2="16" y2="15" stroke-linecap="round" />
               <line x1="16" y1="9" x2="22" y2="15" stroke-linecap="round" />
@@ -746,6 +747,15 @@ interface MoveDisplayCard {
       }
       .w-icon-btn:hover { border-color: rgba(242, 184, 75, 0.55); color: var(--w-gold-1); }
       .w-icon-btn-active { border-color: rgba(242, 184, 75, 0.75); color: var(--w-gold-1); background: rgba(242, 184, 75, 0.12); }
+      .w-icon-btn-muted {
+        border-color: rgba(255, 122, 107, 0.6);
+        color: #ff7a6b;
+        background: rgba(255, 122, 107, 0.15);
+      }
+      .w-icon-btn-muted:hover {
+        border-color: rgba(255, 122, 107, 0.85);
+        color: #ff9e92;
+      }
 
       /* ---------- Buttons ---------- */
       .w-btn-gold {

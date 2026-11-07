@@ -504,6 +504,11 @@ export class WaveViewModelStore {
       // Ignore storage errors
     }
     this.announce(next ? 'Sound cues muted' : 'Sound cues unmuted');
+    this.pushToast(
+      next ? 'Sound muted' : 'Sound unmuted',
+      next ? 'All audio cues are now silenced.' : 'Audio cues are now enabled.',
+      next ? 'warn' : 'info'
+    );
   }
 
   toggleSettingsDrawer(force?: boolean): void {
