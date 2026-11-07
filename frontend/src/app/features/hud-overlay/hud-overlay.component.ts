@@ -745,6 +745,36 @@ export class HudOverlayComponent implements AfterViewInit {
       this.drawFloatingCursorPill(ctx, cx, cy, label, activeAccent);
     }
 
+    // 5. Scene Gesture Hold-Progress Ring (3 or 4 fingers held in HOVER)
+    const sceneProgress = this.store.sceneHoldProgress();
+    const sceneFingers = this.store.detectedSceneGesture();
+    if (sceneProgress > 0 && sceneFingers) {
+      const sceneRadius = ringRadius + 9;
+      // Faint background circular track
+      ctx.beginPath();
+      ctx.arc(cx, cy, sceneRadius, 0, Math.PI * 2);
+      ctx.strokeStyle = 'oklch(0.78 0.16 75 / 0.28)';
+      ctx.lineWidth = 3.5;
+      ctx.stroke();
+
+      // Golden progress arc
+      const startAngle = -Math.PI / 2;
+      const endAngle = startAngle + Math.PI * 2 * sceneProgress;
+      ctx.beginPath();
+      ctx.arc(cx, cy, sceneRadius, startAngle, endAngle);
+      ctx.strokeStyle = this.goldBrightColor;
+      ctx.lineWidth = 3.5;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+
+      // Floating label
+      const matchedScene = this.store.scenes().find((s) => s.gestureFingers === sceneFingers);
+      const pillLabel = matchedScene
+        ? `${sceneFingers}F · ${matchedScene.name}`
+        : `${sceneFingers}-FINGER SCENE`;
+      this.drawFloatingCursorPill(ctx, cx, cy, pillLabel, this.goldBrightColor);
+    }
+
     ctx.restore();
   }
 

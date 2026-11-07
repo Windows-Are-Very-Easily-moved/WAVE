@@ -6,6 +6,7 @@ import { BackendConnectionState, WindowApiService } from './window-api.service';
 import { SettingsService } from './settings.service';
 import { SceneApiService } from './scene-api.service';
 import { SceneApplyResult, SceneSummary } from '../models/scene.model';
+import { SceneGestureDetector } from '../utils/scene-gesture.detector';
 import {
   FilterType,
   GestureFrameSnapshot,
@@ -106,6 +107,9 @@ export class WaveViewModelStore {
   readonly undoAvailable = signal<boolean>(false);
   readonly lastSceneResult = signal<SceneApplyResult | null>(null);
   readonly saveSceneModalOpen = signal<boolean>(false);
+  readonly sceneHoldProgress = signal<number>(0);
+  readonly detectedSceneGesture = signal<3 | 4 | null>(null);
+  readonly sceneDetector = new SceneGestureDetector();
 
   // Mode & UI drawer/modal signals
   readonly simulationMode = signal<boolean>(false);
@@ -257,11 +261,20 @@ export class WaveViewModelStore {
   private lastScrollDispatchedAtMs = -Infinity;
 
   constructor() {
-    this.gestureEngine.updateSettings(this.settingsService.settings());
+    const currentSettings = this.settingsService.settings();
+    this.gestureEngine.updateSettings(currentSettings);
+    this.sceneDetector.setOptions({
+      holdMs: currentSettings.sceneHoldMs,
+      cooldownMs: currentSettings.sceneCooldownMs
+    });
     try {
       effect(() => {
-        const currentSettings = this.settingsService.settings();
-        this.gestureEngine.updateSettings(currentSettings);
+        const s = this.settingsService.settings();
+        this.gestureEngine.updateSettings(s);
+        this.sceneDetector.setOptions({
+          holdMs: s.sceneHoldMs,
+          cooldownMs: s.sceneCooldownMs
+        });
       });
     } catch {
       // Fallback when instantiated in a lightweight test injector without EffectScheduler
@@ -379,6 +392,27 @@ export class WaveViewModelStore {
     } catch (err: any) {
       this.pushToast('Could not update scene', err?.message || 'Error updating scene', 'warn');
       return false;
+    }
+  }
+
+  async triggerSceneGesture(fingers: 3 | 4): Promise<void> {
+    const matched = this.scenes().find((s) => s.gestureFingers === fingers);
+    this.playSound('snap');
+    if (matched) {
+      this.pushToast(
+        `${fingers}-finger gesture detected`,
+        `Restoring scene '${matched.name}' (${matched.windowCount} windows)...`,
+        'armed'
+      );
+      this.announce(`${fingers}-finger gesture detected. Restoring scene ${matched.name}.`);
+      await this.applyScene(matched);
+    } else {
+      this.pushToast(
+        `${fingers}-finger gesture detected`,
+        `No scene is currently assigned to ${fingers} fingers. Assign one in the Scenes drawer (W).`,
+        'info'
+      );
+      this.announce(`${fingers}-finger gesture detected, but no scene is assigned.`);
     }
   }
 
@@ -638,6 +672,33 @@ export class WaveViewModelStore {
         this.lastScrollDispatchedAtMs = performance.now();
         void this.apiService.scrollInput(snapshot.scrollIssued);
       }
+    }
+
+    // Wave Scenes Gesture Observer
+    if (this.scenesEnabled() && !this.simulationMode()) {
+      const hand = snapshot.handsMirrored[0] ?? null;
+      const sceneRes = this.sceneDetector.update(
+        hand,
+        snapshot.state,
+        snapshot.velocity ?? 0,
+        timestampMs
+      );
+
+      if (sceneRes.progress !== this.sceneHoldProgress()) {
+        this.sceneHoldProgress.set(sceneRes.progress);
+      }
+      if (sceneRes.fingers !== this.detectedSceneGesture()) {
+        this.detectedSceneGesture.set(sceneRes.fingers);
+      }
+
+      if (sceneRes.triggered && sceneRes.fingers) {
+        this.ngZone.run(() => {
+          void this.triggerSceneGesture(sceneRes.fingers!);
+        });
+      }
+    } else if (this.sceneHoldProgress() > 0 || this.detectedSceneGesture() !== null) {
+      this.sceneHoldProgress.set(0);
+      this.detectedSceneGesture.set(null);
     }
 
     const telemetryDue = timestampMs - this.lastUiSyncMs >= 250;

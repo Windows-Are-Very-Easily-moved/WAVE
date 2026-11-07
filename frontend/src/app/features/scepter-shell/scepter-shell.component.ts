@@ -884,7 +884,7 @@ import { ScenesPanelComponent } from '../scenes-panel/scenes-panel.component';
               <kbd class="rounded bg-secondary px-1.5 py-0.5 font-mono text-foreground">S</kbd> for Settings,
               <kbd class="rounded bg-secondary px-1.5 py-0.5 font-mono text-foreground">M</kbd> to Mute sound cues, or
               <kbd class="rounded bg-secondary px-1.5 py-0.5 font-mono text-foreground">C</kbd> for this guide.
-              In Simulation mode, hold <kbd class="rounded bg-secondary px-1.5 py-0.5 font-mono text-foreground">Shift</kbd> while moving the mouse up or down to emulate a V-sign scroll.
+              In Simulation mode, hold <kbd class="rounded bg-secondary px-1.5 py-0.5 font-mono text-foreground">Shift</kbd> while moving the mouse to scroll, or press <kbd class="rounded bg-secondary px-1.5 py-0.5 font-mono text-foreground">3</kbd> / <kbd class="rounded bg-secondary px-1.5 py-0.5 font-mono text-foreground">4</kbd> to trigger scene gestures.
             </p>
           </div>
 
@@ -985,6 +985,12 @@ export class ScepterShellComponent implements AfterViewInit {
       if (this.store.scenesEnabled() && this.store.undoAvailable()) {
         event.preventDefault();
         void this.store.undoLastScene();
+      }
+    } else if (event.key === '3' || event.key === '4') {
+      if (this.store.simulationMode() && this.store.scenesEnabled()) {
+        event.preventDefault();
+        const fingers = event.key === '3' ? 3 : 4;
+        void this.store.triggerSceneGesture(fingers);
       }
     } else if (event.key === 'm' || event.key === 'M') {
       event.preventDefault();

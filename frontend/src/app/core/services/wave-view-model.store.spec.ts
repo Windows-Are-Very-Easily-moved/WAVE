@@ -284,5 +284,13 @@ describe('WaveViewModelStore', () => {
     await store.undoLastScene();
     expect(mockSceneApiService.undoLastApply).toHaveBeenCalled();
     expect(store.undoAvailable()).toBe(false);
+
+    // Trigger scene gesture 3 (mapped)
+    await store.triggerSceneGesture(3);
+    expect(mockSceneApiService.applyScene).toHaveBeenCalledWith(store.scenes()[0]);
+
+    // Trigger scene gesture 4 (unmapped)
+    await store.triggerSceneGesture(4);
+    expect(store.toasts().some((t) => t.title.includes('4-finger gesture detected'))).toBe(true);
   });
 });
