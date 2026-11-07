@@ -4,6 +4,8 @@ import { HandTrackerService, TrackerStatus } from './hand-tracker.service';
 import { GestureEngineService } from './gesture-engine.service';
 import { BackendConnectionState, WindowApiService } from './window-api.service';
 import { SettingsService } from './settings.service';
+import { SceneApiService } from './scene-api.service';
+import { SceneApplyResult, SceneSummary } from '../models/scene.model';
 import {
   FilterType,
   GestureFrameSnapshot,
@@ -86,6 +88,7 @@ export class WaveViewModelStore {
   private readonly gestureEngine = inject(GestureEngineService);
   private readonly apiService = inject(WindowApiService);
   private readonly settingsService = inject(SettingsService);
+  private readonly sceneApi = inject(SceneApiService);
   private readonly ngZone = inject(NgZone);
 
   // Core reactive frame & telemetry signals
@@ -94,6 +97,15 @@ export class WaveViewModelStore {
   latestFrame: GestureFrameSnapshot = INITIAL_FRAME;
   readonly fps = signal<number>(0);
   readonly trackingConfidence = signal<number>(0);
+
+  // Wave Scenes state signals
+  readonly scenesEnabled = computed<boolean>(() => this.settings().scenesEnabled);
+  readonly scenes = signal<SceneSummary[]>([]);
+  readonly scenesLoading = signal<boolean>(false);
+  readonly scenesOpen = signal<boolean>(false);
+  readonly undoAvailable = signal<boolean>(false);
+  readonly lastSceneResult = signal<SceneApplyResult | null>(null);
+  readonly saveSceneModalOpen = signal<boolean>(false);
 
   // Mode & UI drawer/modal signals
   readonly simulationMode = signal<boolean>(false);
@@ -253,6 +265,120 @@ export class WaveViewModelStore {
       });
     } catch {
       // Fallback when instantiated in a lightweight test injector without EffectScheduler
+    }
+    void this.loadScenes();
+  }
+
+  // --- Wave Scenes Management ---
+
+  toggleScenesDrawer(force?: boolean): void {
+    const next = force !== undefined ? force : !this.scenesOpen();
+    this.scenesOpen.set(next);
+    if (next) {
+      void this.loadScenes();
+    }
+  }
+
+  toggleSaveSceneModal(force?: boolean): void {
+    const next = force !== undefined ? force : !this.saveSceneModalOpen();
+    this.saveSceneModalOpen.set(next);
+  }
+
+  async loadScenes(): Promise<void> {
+    if (!this.settings().scenesEnabled) return;
+    this.scenesLoading.set(true);
+    try {
+      const list = await this.sceneApi.getScenes();
+      this.scenes.set(list);
+    } finally {
+      this.scenesLoading.set(false);
+    }
+  }
+
+  async captureCurrentScene(name?: string, gestureFingers?: 3 | 4 | null): Promise<boolean> {
+    try {
+      const captured = await this.sceneApi.captureScene({ name, gestureFingers });
+      if (captured) {
+        this.pushToast(
+          'Scene saved',
+          `Saved '${captured.name}' with ${captured.windowCount} windows.`,
+          'armed'
+        );
+        this.recordAction('Saved scene', captured.name);
+        this.announce(`Scene ${captured.name} saved with ${captured.windowCount} windows.`);
+        this.scenes.update((arr) => [captured, ...arr.filter((s) => s.id !== captured.id)]);
+        this.saveSceneModalOpen.set(false);
+        return true;
+      }
+      return false;
+    } catch (err: any) {
+      this.pushToast('Could not save scene', err?.message || 'Error saving layout', 'warn');
+      return false;
+    }
+  }
+
+  async applyScene(scene: SceneSummary): Promise<void> {
+    this.recordAction(`Restoring scene: ${scene.name}`, `${scene.windowCount} windows`);
+    this.announce(`Restoring scene ${scene.name}`);
+    const result = await this.sceneApi.applyScene(scene);
+    this.lastSceneResult.set(result);
+    this.undoAvailable.set(true);
+
+    const isLive = this.liveControl();
+    const restoredCount = result.restored.length;
+    const missingCount = result.missing.length;
+
+    let desc = `${restoredCount} of ${scene.windowCount} windows restored.`;
+    if (missingCount > 0) {
+      desc += ` (${result.missing.map((m) => m.processName).join(', ')} not open)`;
+    }
+    if (!isLive) {
+      desc += ' [Practice mode: windows not moved]';
+    }
+
+    this.pushToast(
+      `Restored '${scene.name}'`,
+      desc,
+      isLive ? 'armed' : 'gold'
+    );
+    this.announce(`Scene ${scene.name} restored. ${desc}`);
+  }
+
+  async undoLastScene(): Promise<void> {
+    const res = await this.sceneApi.undoLastApply();
+    if (res.success) {
+      this.undoAvailable.set(false);
+      this.pushToast('Layout restored', res.message, 'info');
+      this.recordAction('Undid scene layout', 'Previous positions restored');
+      this.announce('Previous window layout restored.');
+    } else {
+      this.pushToast('Undo failed', res.message, 'warn');
+    }
+  }
+
+  async deleteScene(id: string): Promise<void> {
+    const target = this.scenes().find((s) => s.id === id);
+    const ok = await this.sceneApi.deleteScene(id);
+    if (ok) {
+      this.pushToast('Scene deleted', target ? `Removed '${target.name}'` : undefined, 'info');
+      await this.loadScenes();
+    } else if (!this.liveControl()) {
+      this.pushToast('Practice mode', 'Turn on Live control to delete stored scenes.', 'warn');
+    }
+  }
+
+  async updateScene(id: string, name?: string, gestureFingers?: 3 | 4 | null): Promise<boolean> {
+    try {
+      const updated = await this.sceneApi.updateScene(id, { name, gestureFingers });
+      if (updated) {
+        this.pushToast('Scene updated', `'${updated.name}' saved.`, 'info');
+        await this.loadScenes();
+        return true;
+      }
+      return false;
+    } catch (err: any) {
+      this.pushToast('Could not update scene', err?.message || 'Error updating scene', 'warn');
+      return false;
     }
   }
 

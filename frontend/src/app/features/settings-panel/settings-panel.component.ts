@@ -414,6 +414,83 @@ import { WaveViewModelStore } from '../../core/services/wave-view-model.store';
             </div>
           </div>
 
+          <!-- Section: Wave Scenes -->
+          <div class="space-y-3 border-t border-glass-border pt-4">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <div class="text-sm font-medium text-foreground">Wave Scenes</div>
+                <div class="text-xs text-muted-foreground">
+                  Save window layouts & restore via 3 or 4-finger hand poses
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                [attr.aria-checked]="s().scenesEnabled"
+                aria-label="Toggle Wave Scenes"
+                (click)="store.updateSetting('scenesEnabled', !s().scenesEnabled)"
+                class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border transition-colors"
+                [ngClass]="
+                  s().scenesEnabled
+                    ? 'border-primary/60 bg-primary/30'
+                    : 'border-glass-border bg-secondary'
+                ">
+                <span
+                  class="inline-block h-4 w-4 transform rounded-full transition-transform"
+                  [ngClass]="
+                    s().scenesEnabled
+                      ? 'translate-x-5 bg-primary'
+                      : 'translate-x-1 bg-muted-foreground'
+                  "></span>
+              </button>
+            </div>
+
+            <div *ngIf="s().scenesEnabled" class="space-y-3 pt-1">
+              <div class="space-y-1.5">
+                <div class="flex items-center justify-between">
+                  <label for="s-scene-hold" class="text-xs font-medium text-foreground">
+                    Pose Hold Duration
+                  </label>
+                  <span class="font-mono text-[11px] text-primary">{{ s().sceneHoldMs }}ms</span>
+                </div>
+                <input
+                  id="s-scene-hold"
+                  type="range"
+                  min="300"
+                  max="1200"
+                  step="50"
+                  class="w-full accent-primary"
+                  [ngModel]="s().sceneHoldMs"
+                  (ngModelChange)="store.updateSetting('sceneHoldMs', +$event)" />
+              </div>
+
+              <div class="space-y-1.5">
+                <div class="flex items-center justify-between">
+                  <label for="s-scene-cooldown" class="text-xs font-medium text-foreground">
+                    Gesture Cooldown
+                  </label>
+                  <span class="font-mono text-[11px] text-primary">{{ s().sceneCooldownMs }}ms</span>
+                </div>
+                <input
+                  id="s-scene-cooldown"
+                  type="range"
+                  min="500"
+                  max="3000"
+                  step="100"
+                  class="w-full accent-primary"
+                  [ngModel]="s().sceneCooldownMs"
+                  (ngModelChange)="store.updateSetting('sceneCooldownMs', +$event)" />
+              </div>
+
+              <button
+                type="button"
+                (click)="store.toggleScenesDrawer(true); close()"
+                class="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-primary/40 bg-primary/10 px-3 py-2 text-xs font-medium text-primary hover:bg-primary/20 transition cursor-pointer">
+                <span>Manage Saved Scenes ({{ store.scenes().length }})</span>
+              </button>
+            </div>
+          </div>
+
           <!-- Section: Cursor Smoothing Filter -->
           <div class="space-y-3 border-t border-glass-border pt-4">
             <h3 class="font-mono text-[11px] uppercase tracking-widest text-muted-foreground">

@@ -14,11 +14,12 @@ import { Point2D } from '../../core/models/landmark.model';
 import { WaveViewModelStore } from '../../core/services/wave-view-model.store';
 import { HudOverlayComponent } from '../hud-overlay/hud-overlay.component';
 import { SettingsPanelComponent } from '../settings-panel/settings-panel.component';
+import { ScenesPanelComponent } from '../scenes-panel/scenes-panel.component';
 
 @Component({
   selector: 'app-scepter-shell',
   standalone: true,
-  imports: [CommonModule, HudOverlayComponent, SettingsPanelComponent],
+  imports: [CommonModule, HudOverlayComponent, SettingsPanelComponent, ScenesPanelComponent],
   template: `
     <div
       class="flex h-screen w-screen flex-col overflow-hidden bg-void text-foreground select-none"
@@ -270,6 +271,22 @@ import { SettingsPanelComponent } from '../settings-panel/settings-panel.compone
               <circle cx="12" cy="12" r="10" />
               <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" stroke-linecap="round" stroke-linejoin="round" />
               <path d="M12 17h.01" stroke-linecap="round" />
+            </svg>
+          </button>
+
+          <!-- Scenes Drawer (W) Button -->
+          <button
+            *ngIf="store.scenesEnabled()"
+            type="button"
+            (click)="store.toggleScenesDrawer()"
+            [attr.aria-pressed]="store.scenesOpen()"
+            aria-label="Open scenes manager"
+            title="Wave Scenes (W)"
+            class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-glass-border bg-secondary/50 text-foreground transition hover:border-primary/40 hover:bg-secondary cursor-pointer"
+            [ngClass]="{ 'border-primary/60 text-primary bg-primary/10': store.scenesOpen() }">
+            <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <path d="M3 9h18M9 21V9" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
           </button>
 
@@ -862,7 +879,9 @@ import { SettingsPanelComponent } from '../settings-panel/settings-panel.compone
           <div class="rounded-2xl border border-glass-border bg-secondary/30 p-3.5 text-xs text-muted-foreground space-y-1">
             <div class="font-semibold text-foreground">Keyboard Shortcuts &amp; Simulation</div>
             <p>
-              Press <kbd class="rounded bg-secondary px-1.5 py-0.5 font-mono text-foreground">S</kbd> for Settings,
+              Press <kbd class="rounded bg-secondary px-1.5 py-0.5 font-mono text-foreground">W</kbd> for Scenes,
+              <kbd class="rounded bg-secondary px-1.5 py-0.5 font-mono text-foreground">U</kbd> to Undo scene apply,
+              <kbd class="rounded bg-secondary px-1.5 py-0.5 font-mono text-foreground">S</kbd> for Settings,
               <kbd class="rounded bg-secondary px-1.5 py-0.5 font-mono text-foreground">M</kbd> to Mute sound cues, or
               <kbd class="rounded bg-secondary px-1.5 py-0.5 font-mono text-foreground">C</kbd> for this guide.
               In Simulation mode, hold <kbd class="rounded bg-secondary px-1.5 py-0.5 font-mono text-foreground">Shift</kbd> while moving the mouse up or down to emulate a V-sign scroll.
@@ -882,6 +901,9 @@ import { SettingsPanelComponent } from '../settings-panel/settings-panel.compone
 
       <!-- SETTINGS DRAWER -->
       <app-settings-panel />
+
+      <!-- SCENES DRAWER & CAPTURE MODAL -->
+      <app-scenes-panel />
     </div>
   `,
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -954,6 +976,16 @@ export class ScepterShellComponent implements AfterViewInit {
     if (event.key === 's' || event.key === 'S') {
       event.preventDefault();
       this.store.toggleSettingsDrawer();
+    } else if (event.key === 'w' || event.key === 'W') {
+      if (this.store.scenesEnabled()) {
+        event.preventDefault();
+        this.store.toggleScenesDrawer();
+      }
+    } else if (event.key === 'u' || event.key === 'U') {
+      if (this.store.scenesEnabled() && this.store.undoAvailable()) {
+        event.preventDefault();
+        void this.store.undoLastScene();
+      }
     } else if (event.key === 'm' || event.key === 'M') {
       event.preventDefault();
       this.store.toggleMute();
@@ -963,6 +995,8 @@ export class ScepterShellComponent implements AfterViewInit {
     } else if (event.key === 'Escape') {
       this.store.toggleGuideModal(false);
       this.store.toggleSettingsDrawer(false);
+      this.store.toggleScenesDrawer(false);
+      this.store.toggleSaveSceneModal(false);
     }
   }
 

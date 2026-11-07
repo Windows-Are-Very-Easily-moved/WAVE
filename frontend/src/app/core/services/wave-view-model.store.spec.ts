@@ -9,11 +9,13 @@ import {
 import { of } from 'rxjs';
 import { WaveViewModelStore, PRACTICE_GESTURE_CARDS } from './wave-view-model.store';
 import { WindowApiService } from './window-api.service';
+import { SceneApiService } from './scene-api.service';
 import { CameraService } from './camera.service';
 import { HandTrackerService } from './hand-tracker.service';
 import { SettingsService } from './settings.service';
 import { GestureEngineService } from './gesture-engine.service';
 import { DEFAULT_SETTINGS, GestureFrameSnapshot } from '../models/gesture.model';
+import { SceneSummary, SceneApplyResult } from '../models/scene.model';
 
 function createBaseSnapshot(overrides: Partial<GestureFrameSnapshot> = {}): GestureFrameSnapshot {
   return {
@@ -54,6 +56,14 @@ describe('WaveViewModelStore', () => {
     scrollInput: ReturnType<typeof vi.fn>;
     checkHealth: ReturnType<typeof vi.fn>;
   };
+  let mockSceneApiService: {
+    getScenes: ReturnType<typeof vi.fn>;
+    captureScene: ReturnType<typeof vi.fn>;
+    updateScene: ReturnType<typeof vi.fn>;
+    deleteScene: ReturnType<typeof vi.fn>;
+    applyScene: ReturnType<typeof vi.fn>;
+    undoLastApply: ReturnType<typeof vi.fn>;
+  };
 
   beforeEach(() => {
     const liveSig = signal(false);
@@ -74,6 +84,35 @@ describe('WaveViewModelStore', () => {
       checkHealth: vi.fn(() => of(true))
     };
 
+    mockSceneApiService = {
+      getScenes: vi.fn(() => Promise.resolve<SceneSummary[]>([])),
+      captureScene: vi.fn(() => Promise.resolve<SceneSummary>({
+        id: 'scene-1',
+        name: 'Work Layout',
+        gestureFingers: 3,
+        createdAt: new Date().toISOString(),
+        windowCount: 2,
+        windows: []
+      })),
+      updateScene: vi.fn(() => Promise.resolve<SceneSummary>({
+        id: 'scene-1',
+        name: 'Work Layout Updated',
+        gestureFingers: 3,
+        createdAt: new Date().toISOString(),
+        windowCount: 2,
+        windows: []
+      })),
+      deleteScene: vi.fn(() => Promise.resolve(true)),
+      applyScene: vi.fn((scene: SceneSummary) => Promise.resolve<SceneApplyResult>({
+        scene,
+        restored: [{ processName: 'notepad', className: 'Notepad', rect: { x: 0, y: 0, w: 0.5, h: 1 } }],
+        missing: [],
+        failed: [],
+        durationMs: 42
+      })),
+      undoLastApply: vi.fn(() => Promise.resolve({ success: true, message: 'Layout restored.' }))
+    };
+
     injector = createEnvironmentInjector(
       [
         WaveViewModelStore,
@@ -87,6 +126,7 @@ describe('WaveViewModelStore', () => {
           }
         },
         { provide: WindowApiService, useValue: mockApiService },
+        { provide: SceneApiService, useValue: mockSceneApiService },
         {
           provide: CameraService,
           useValue: {
@@ -207,5 +247,42 @@ describe('WaveViewModelStore', () => {
     store.toggleLiveControl();
     expect(store.liveControl()).toBe(false);
     expect(store.ariaAnnouncement()).toContain('Practice mode active');
+  });
+
+  it('manages Wave Scenes drawer, modal state, loading, apply, and undo', async () => {
+    expect(store.scenesEnabled()).toBe(true);
+    expect(store.scenesOpen()).toBe(false);
+    expect(store.undoAvailable()).toBe(false);
+
+    // Toggle drawer
+    store.toggleScenesDrawer(true);
+    expect(store.scenesOpen()).toBe(true);
+    expect(mockSceneApiService.getScenes).toHaveBeenCalled();
+
+    // Toggle capture modal
+    store.toggleSaveSceneModal(true);
+    expect(store.saveSceneModalOpen()).toBe(true);
+    store.toggleSaveSceneModal(false);
+    expect(store.saveSceneModalOpen()).toBe(false);
+
+    // Capture scene
+    await store.captureCurrentScene('Coding Layout', 3);
+    expect(mockSceneApiService.captureScene).toHaveBeenCalledWith({
+      name: 'Coding Layout',
+      gestureFingers: 3
+    });
+    expect(store.scenes().length).toBe(1);
+    expect(store.scenes()[0].name).toBe('Work Layout');
+
+    // Apply scene
+    await store.applyScene(store.scenes()[0]);
+    expect(mockSceneApiService.applyScene).toHaveBeenCalledWith(store.scenes()[0]);
+    expect(store.undoAvailable()).toBe(true);
+    expect(store.lastSceneResult()?.scene.name).toBe('Work Layout');
+
+    // Undo scene
+    await store.undoLastScene();
+    expect(mockSceneApiService.undoLastApply).toHaveBeenCalled();
+    expect(store.undoAvailable()).toBe(false);
   });
 });

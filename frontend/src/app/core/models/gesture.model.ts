@@ -36,6 +36,11 @@ export interface ScepterSettings {
   scrollEnterMs: number;
   scrollExitMs: number;
   invertScroll: boolean;
+  // Wave Scenes parameters
+  scenesEnabled: boolean;
+  sceneHoldMs: number;
+  sceneCooldownMs: number;
+  sceneAnimate: boolean;
 }
 
 export const DEFAULT_SETTINGS: ScepterSettings = {
@@ -61,7 +66,11 @@ export const DEFAULT_SETTINGS: ScepterSettings = {
   vSpreadMin: 0.35,
   scrollEnterMs: 120,
   scrollExitMs: 150,
-  invertScroll: false
+  invertScroll: false,
+  scenesEnabled: true,
+  sceneHoldMs: 600,
+  sceneCooldownMs: 1500,
+  sceneAnimate: false
 };
 
 export interface GestureFrameSnapshot {
