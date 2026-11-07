@@ -794,7 +794,17 @@ interface MoveDisplayCard {
       .w-link-muted:hover { color: var(--w-text); }
 
       /* ---------- Stage ---------- */
-      .w-stage-host { position: relative; display: flex; flex: 1 1 auto; min-height: 360px; }
+      .w-stage-host {
+        position: relative;
+        display: flex;
+        flex: 0 0 calc(100vh - 76px);
+        height: calc(100vh - 76px);
+        min-height: 420px;
+      }
+      .w-shell.w-compact .w-stage-host {
+        flex: 0 0 calc(100vh - 58px);
+        height: calc(100vh - 58px);
+      }
       .w-stage {
         position: relative;
         flex: 1;
