@@ -250,21 +250,6 @@ Open the **Settings** drawer (`S` key or top-right sliders icon) to adjust param
 
 ---
 
-## 60-Second Demo Script
-
-1. **0:00 – 0:10 | Landing Page & Camera Stage:**
-   Open `http://localhost:4200`. View the sleek dark landing card and click **Begin**. The camera starts automatically, filling the full-viewport interactive stage.
-2. **0:10 – 0:25 | "Six Moves to Master" Practice:**
-   Scroll down slightly to view the **Six Moves to Master** panel. Test **01 Move** (open hand), **02 Pinch & grab** (pinch thumb + index), and **03 Snap to edge** (drag to side until armed and release). Watch the cards light up and the golden progress bar advance.
-3. **0:25 – 0:40 | Live Window Snapping & Touchless Scrolling:**
-   Toggle **Live control on** in the top header. Focus another window (e.g., Chrome or Notepad). Pinch to grab, drag to the left border until **ARMED · LEFT** shows with the window title, and release — the window snaps flush to the left screen half. Form a peace sign (**✌️ V-sign**) and move your hand up/down to scroll without touching the mouse.
-4. **0:40 – 0:55 | Wave Scenes Workspace Launcher:**
-   Press `W` to open the **Wave Scenes** panel. Select your apps (e.g., Chrome Left Half, Editor Right Half), pick the **🤘 Rock-On** sign, and click **Save Scene**. Minimize the windows, raise your hand, and hold the **🤘 Rock-On sign** — the canvas progress ring fills, un-maximizes both windows, and places them side-by-side on your screen.
-5. **0:55 – 1:00 | Document PiP & Settings:**
-   Click the **Picture-in-Picture** button in the header. The camera stage floats in an always-on-top window over your desktop so you can continue controlling windows from any app.
-
----
-
 ## Known Limitations & Tips
 
 1. **Windows 10/11 for Native Win32 Actions:** Physical desktop window positioning and mouse wheel injection require Windows OS APIs (`user32.dll`, `dwmapi.dll`).
